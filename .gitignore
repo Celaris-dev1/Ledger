@@ -1,0 +1,11 @@
+/ledgerd
+/ledger
+/bin/
+*.key
+anchors/
+auditor-pack/
+.env
+sdk/ts/node_modules/
+sdk/ts/dist/
+__pycache__/
+*.pyc
