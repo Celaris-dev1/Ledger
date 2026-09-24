@@ -2,6 +2,7 @@
 package anchor
 
 import (
+	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/base64"
@@ -12,6 +13,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/Celaris-dev1/Ledger/internal/keys"
 )
 
 // Root is the signed chain root (GET /v1/chains/{chain}/root).
@@ -22,7 +25,10 @@ type Root struct {
 	Signature string `json:"signature"`
 	PublicKey string `json:"public_key"`
 	KeyID     string `json:"key_id,omitempty"` // KeyID(public key); not part of the signed message
-	SignedAt  string `json:"signed_at,omitempty"`
+	// Alg is the signature algorithm; empty means Ed25519 (every root before KMS support).
+	// ECDSA roots ("ecdsa-p256-sha256", e.g. AWS KMS / Vault) carry a PKIX DER public key.
+	Alg      string `json:"alg,omitempty"`
+	SignedAt string `json:"signed_at,omitempty"`
 }
 
 // Message is the exact byte string that is signed.
@@ -77,17 +83,42 @@ func Sign(key ed25519.PrivateKey, chain string, seq int64, head string) Root {
 	}
 }
 
-// VerifyRoot checks a Root's signature against its embedded public key.
+// SignWith produces a signed Root using any keys.Signer (file, Vault Transit, AWS KMS).
+func SignWith(ctx context.Context, s keys.Signer, chain string, seq int64, head string) (Root, error) {
+	sig, err := s.Sign(ctx, Message(chain, seq, head))
+	if err != nil {
+		return Root{}, err
+	}
+	r := Root{
+		Chain: chain, Seq: seq, Head: head,
+		Signature: base64.StdEncoding.EncodeToString(sig),
+		PublicKey: base64.StdEncoding.EncodeToString(s.PublicKey()),
+		KeyID:     s.KeyID(),
+		SignedAt:  time.Now().UTC().Format(time.RFC3339),
+	}
+	if s.Algorithm() != keys.AlgEd25519 {
+		r.Alg = s.Algorithm()
+	}
+	return r, nil
+}
+
+// RootKeyID is the key id of the root's embedded public key for its algorithm.
+func RootKeyID(r Root) string {
+	pub, _ := base64.StdEncoding.DecodeString(r.PublicKey)
+	return keys.KeyIDFor(keys.NormalizeAlg(r.Alg), pub)
+}
+
+// VerifyRoot checks a Root's signature against its embedded public key (Ed25519 or ECDSA P-256).
 func VerifyRoot(r Root) bool {
 	pub, err := base64.StdEncoding.DecodeString(r.PublicKey)
-	if err != nil || len(pub) != ed25519.PublicKeySize {
+	if err != nil {
 		return false
 	}
 	sig, err := base64.StdEncoding.DecodeString(r.Signature)
 	if err != nil {
 		return false
 	}
-	return ed25519.Verify(ed25519.PublicKey(pub), Message(r.Chain, r.Seq, r.Head), sig)
+	return keys.VerifySignature(r.Alg, pub, Message(r.Chain, r.Seq, r.Head), sig) == nil
 }
 
 // Write writes the root to dir/<chain>/<seq>.json and dir/<chain>/latest.json. The directory is
