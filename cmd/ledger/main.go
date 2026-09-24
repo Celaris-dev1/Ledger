@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"crypto/ed25519"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"path/filepath"
 
 	"github.com/Celaris-dev1/Ledger/internal/anchor"
+	"github.com/Celaris-dev1/Ledger/internal/anchoring"
 	"github.com/Celaris-dev1/Ledger/internal/api"
 	"github.com/Celaris-dev1/Ledger/internal/export"
 	"github.com/Celaris-dev1/Ledger/internal/store"
@@ -19,13 +21,23 @@ const usage = `ledger — tamper-evident agent decision log
 
 usage:
   ledger verify [--chain NAME]           verify one chain (default: all chains); exit 1 if broken
+  ledger verify --anchors [--chain NAME] [--json]
+                                         also re-verify every external anchor receipt offline and prove
+                                         each anchored head is still on the chain (detects rehashed history)
   ledger replay --goal ID                print the ordered records for a goal as JSON
   ledger export --out DIR (--chain NAME ... | --goal ID)
                                          write pack.json + narrative.html (EU AI Act Art. 12/14)
   ledger anchor [--chain NAME] [--dir DIR]
                                          sign current chain root(s) with Ed25519 and write to DIR
+  ledger anchor --external [--chain NAME] [--dir DIR]
+                                         anchor now via the configured backends (TSAs, git, dir) and store receipts
+  ledger keys list | rotate [--keep-old] [--operator ID]
+                                         show / rotate the root-signing keyring (LEDGER_KEYRING_DIR);
+                                         a rotation is recorded in the "ledger" system chain
 
-env: LEDGER_DATABASE_URL, LEDGER_SIGNING_KEY (base64 seed) or LEDGER_KEY_FILE, LEDGER_ANCHOR_DIR
+env: LEDGER_DATABASE_URL, LEDGER_SIGNING_KEY (base64 seed) or LEDGER_KEY_FILE, LEDGER_KEYRING_DIR,
+     LEDGER_ANCHOR_DIR, LEDGER_TSA_URLS, LEDGER_TSA_TRUST, LEDGER_TSA_QUORUM, LEDGER_ANCHOR_GIT_REMOTE,
+     LEDGER_ANCHOR_GIT_DIR, LEDGER_ANCHOR_GIT_BRANCH (see README "External anchoring")
 `
 
 type multi []string
@@ -57,9 +69,21 @@ func main() {
 	goal := fs.String("goal", "", "goal id")
 	out := fs.String("out", "auditor-pack", "output directory for export")
 	dir := fs.String("dir", env("LEDGER_ANCHOR_DIR", "anchors"), "anchor output directory")
+	withAnchors := fs.Bool("anchors", false, "verify: also check external anchor receipts")
+	asJSON := fs.Bool("json", false, "verify --anchors: print JSON reports")
+	external := fs.Bool("external", false, "anchor: use the configured external backends")
+	keepOld := fs.Bool("keep-old", false, "keys rotate: keep the retired private key on disk")
+	operator := fs.String("operator", env("USER", "operator"), "keys rotate: human operator id recorded in the rotation record")
+	sub := ""
 	switch cmd {
 	case "verify", "replay", "export", "anchor":
 		_ = fs.Parse(args)
+	case "keys":
+		if len(args) == 0 {
+			die("keys requires list|rotate")
+		}
+		sub = args[0]
+		_ = fs.Parse(args[1:])
 	case "-h", "--help", "help":
 		fmt.Print(usage)
 		return
@@ -73,6 +97,22 @@ func main() {
 		die("database: %v", err)
 	}
 	defer st.Close()
+	// verify/replay never create a key file; verify --anchors reads the keyring (trusted keys) if configured.
+	var key ed25519.PrivateKey
+	var keyring *anchor.Keyring
+	if (cmd != "verify" && cmd != "replay") || (*withAnchors && os.Getenv("LEDGER_KEYRING_DIR") != "") {
+		if key, keyring, err = anchor.LoadSigner(os.Getenv("LEDGER_SIGNING_KEY"), env("LEDGER_KEY_FILE", "ledger_ed25519.key"), os.Getenv("LEDGER_KEYRING_DIR")); err != nil {
+			die("signing key: %v", err)
+		}
+	}
+	acfg, err := anchoring.ConfigFromEnv(os.Getenv)
+	if err != nil {
+		die("anchoring config: %v", err)
+	}
+	if cmd == "anchor" && *external {
+		acfg.AnchorDir = *dir
+	}
+	svc := acfg.Service(st, key, keyring, nil)
 	if len(chains) == 0 && (cmd == "verify" || cmd == "anchor") {
 		if chains, err = st.Chains(ctx); err != nil {
 			die("%v", err)
@@ -80,6 +120,31 @@ func main() {
 	}
 	switch cmd {
 	case "verify":
+		if *withAnchors {
+			failed := false
+			var reps []anchoring.ChainReport
+			for _, c := range chains {
+				rep, err := svc.VerifyChainAnchors(ctx, c)
+				if err != nil {
+					die("%v", err)
+				}
+				failed = failed || !rep.OK
+				reps = append(reps, rep)
+				if !*asJSON {
+					fmt.Print(anchoring.FormatReport(rep))
+				}
+			}
+			if *asJSON {
+				enc := json.NewEncoder(os.Stdout)
+				enc.SetIndent("", "  ")
+				_ = enc.Encode(reps)
+			}
+			if failed {
+				st.Close()
+				os.Exit(1)
+			}
+			return
+		}
 		broken := false
 		for _, c := range chains {
 			res, err := st.Verify(ctx, c)
@@ -114,10 +179,6 @@ func main() {
 				die("%v", err)
 			}
 		}
-		key, err := anchor.LoadKey(os.Getenv("LEDGER_SIGNING_KEY"), env("LEDGER_KEY_FILE", "ledger_ed25519.key"))
-		if err != nil {
-			die("signing key: %v", err)
-		}
 		p, err := api.BuildPack(ctx, st, key, chains, *goal)
 		if err != nil {
 			die("%v", err)
@@ -139,9 +200,25 @@ func main() {
 		f.Close()
 		fmt.Printf("wrote %s/pack.json and %s/narrative.html (%d records, intact=%v)\n", *out, *out, p.Summary.TotalRecords, p.Summary.AllChainsIntact)
 	case "anchor":
-		key, err := anchor.LoadKey(os.Getenv("LEDGER_SIGNING_KEY"), env("LEDGER_KEY_FILE", "ledger_ed25519.key"))
-		if err != nil {
-			die("signing key: %v", err)
+		if *external {
+			bad := false
+			for _, c := range chains {
+				res, err := svc.AnchorChain(ctx, c)
+				if err != nil {
+					bad = true
+					fmt.Fprintf(os.Stderr, "FAILED  %s: %v\n", c, err)
+					continue
+				}
+				fmt.Printf("anchored %s seq=%d head=%s key=%s receipts=%v\n", c, res.Seq, res.Head, res.KeyID, res.Receipts)
+				for _, e := range res.Errors {
+					fmt.Printf("  warning: %s\n", e)
+				}
+			}
+			if bad {
+				st.Close()
+				os.Exit(1)
+			}
+			return
 		}
 		for _, c := range chains {
 			res, err := st.Verify(ctx, c)
@@ -160,6 +237,28 @@ func main() {
 				die("%v", err)
 			}
 			fmt.Printf("anchored %s seq=%d head=%s -> %s\n", c, root.Seq, root.Head, p)
+		}
+	case "keys":
+		if keyring == nil {
+			die("keys requires LEDGER_KEYRING_DIR")
+		}
+		switch sub {
+		case "list":
+			for _, id := range keyring.IDs() {
+				mark := "retired"
+				if id == keyring.ActiveID() {
+					mark = "active"
+				}
+				fmt.Printf("%s  %s\n", id, mark)
+			}
+		case "rotate":
+			rot, rec, err := svc.RotateKey(ctx, *operator, *keepOld)
+			if err != nil {
+				die("%v", err)
+			}
+			fmt.Printf("rotated %s -> %s (recorded as %s seq=%d)\n", rot.OldKeyID, rot.NewKeyID, rec.Chain, rec.Seq)
+		default:
+			die("keys requires list|rotate")
 		}
 	}
 }

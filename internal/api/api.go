@@ -32,6 +32,13 @@ type Server struct {
 	Store Backend
 	Token string
 	Key   ed25519.PrivateKey
+	// Anchors serves GET /v1/chains/{chain}/anchors (optional; 501 when nil).
+	Anchors AnchorSource
+}
+
+// AnchorSource lists (and optionally re-verifies) external anchor receipts of a chain.
+type AnchorSource interface {
+	ChainAnchors(ctx context.Context, chain string, verify bool) (any, error)
 }
 
 // AppendResponse is the 201 body of POST /v1/records.
@@ -52,6 +59,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/records", s.auth(s.listRecords))
 	mux.HandleFunc("GET /v1/chains/{chain}/verify", s.auth(s.verify))
 	mux.HandleFunc("GET /v1/chains/{chain}/root", s.auth(s.root))
+	mux.HandleFunc("GET /v1/chains/{chain}/anchors", s.auth(s.anchors))
 	mux.HandleFunc("GET /v1/goals/{goal_id}/replay", s.auth(s.replay))
 	mux.HandleFunc("GET /v1/export", s.auth(s.export))
 	return mux
@@ -145,6 +153,21 @@ func (s *Server) root(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, anchor.Sign(s.Key, chain, seq, head))
+}
+
+// GET /v1/chains/{chain}/anchors[?verify=1]
+func (s *Server) anchors(w http.ResponseWriter, r *http.Request) {
+	if s.Anchors == nil {
+		writeErr(w, http.StatusNotImplemented, "external anchoring is not configured on this server")
+		return
+	}
+	v := r.URL.Query().Get("verify")
+	out, err := s.Anchors.ChainAnchors(r.Context(), r.PathValue("chain"), v == "1" || v == "true")
+	if err != nil {
+		s.internal(w, err)
+		return
+	}
+	writeJSON(w, 200, out)
 }
 
 func (s *Server) replay(w http.ResponseWriter, r *http.Request) {

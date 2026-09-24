@@ -118,3 +118,26 @@ func TestAPIContract(t *testing.T) {
 		t.Fatalf("export: %d", w.Code)
 	}
 }
+
+type fakeAnchors struct{ verify bool }
+
+func (f *fakeAnchors) ChainAnchors(_ context.Context, chain string, verify bool) (any, error) {
+	f.verify = verify
+	return map[string]any{"chain": chain, "anchors": []any{}}, nil
+}
+
+func TestAnchorsEndpoint(t *testing.T) {
+	s := &Server{Store: &memBackend{}}
+	rr := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rr, httptest.NewRequest("GET", "/v1/chains/c/anchors", nil))
+	if rr.Code != http.StatusNotImplemented {
+		t.Fatalf("want 501, got %d", rr.Code)
+	}
+	fa := &fakeAnchors{}
+	s.Anchors = fa
+	rr = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rr, httptest.NewRequest("GET", "/v1/chains/c/anchors?verify=1", nil))
+	if rr.Code != 200 || !fa.verify || !strings.Contains(rr.Body.String(), `"chain":"c"`) {
+		t.Fatalf("%d %s", rr.Code, rr.Body)
+	}
+}
