@@ -448,26 +448,10 @@ func VerifyRecords(chain string, recs []Record) VerifyResult {
 	return res
 }
 
-// Verify verifies a whole chain, also checking the chains.head pointer.
+// Verify verifies a whole chain, also checking the chains.head pointer. It streams the chain
+// in pages with parallel hashing (see VerifyStream) so memory stays constant for long chains.
 func (s *Store) Verify(ctx context.Context, chain string) (VerifyResult, error) {
-	recs, err := s.ChainRecords(ctx, chain)
-	if err != nil {
-		return VerifyResult{}, err
-	}
-	res := VerifyRecords(chain, recs)
-	if res.OK {
-		var headSeq int64
-		var headHash string
-		err := s.Pool.QueryRow(ctx, `SELECT head_seq, head_hash FROM chains WHERE name=$1`, chain).Scan(&headSeq, &headHash)
-		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-			return res, err
-		}
-		if err == nil && (headSeq != int64(len(recs)) || headHash != res.Head) {
-			b := int64(len(recs))
-			res.OK, res.BrokenAt, res.Reason = false, &b, "chain head pointer disagrees with records (truncation?)"
-		}
-	}
-	return res, nil
+	return s.VerifyStream(ctx, chain, VerifyBatchSize)
 }
 
 // Head returns the current head of a chain (seq 0, "" if empty/unknown).
