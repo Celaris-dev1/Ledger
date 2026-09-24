@@ -165,6 +165,8 @@ func (p *PG) step(ctx context.Context, chain string, st *Stats) (int, error) {
 		return 0, nil
 	}
 	dirty := map[string]bool{}
+	// one multi-row insert per batch (row-by-row inserts dominated projection time: ~1ms/record)
+	var ids, grps, keys, datas []string
 	for _, r := range recs {
 		ops, mapped := Map(r)
 		if !mapped {
@@ -172,12 +174,16 @@ func (p *PG) step(ctx context.Context, chain string, st *Stats) (int, error) {
 		}
 		for _, o := range ops {
 			data, _ := json.Marshal(o)
-			if _, err := tx.Exec(ctx, `INSERT INTO projection_ops(op_id,grp,key,data) VALUES ($1,$2,$3,$4) ON CONFLICT (op_id) DO NOTHING`,
-				o.ID, o.Group, o.Key, string(data)); err != nil {
-				return 0, err
-			}
+			ids, grps, keys, datas = append(ids, o.ID), append(grps, o.Group), append(keys, o.Key), append(datas, string(data))
 			dirty[o.Group] = true
 			st.Ops++
+		}
+	}
+	if len(ids) > 0 {
+		if _, err := tx.Exec(ctx, `INSERT INTO projection_ops(op_id,grp,key,data)
+			SELECT * FROM unnest($1::text[], $2::text[], $3::text[], $4::jsonb[]) ON CONFLICT (op_id) DO NOTHING`,
+			ids, grps, keys, datas); err != nil {
+			return 0, err
 		}
 	}
 	if err := p.recompute(ctx, tx, dirty); err != nil {
