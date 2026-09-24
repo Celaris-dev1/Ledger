@@ -36,21 +36,25 @@ type AppendRequest struct {
 	ActorChain    []Actor         `json:"actor_chain"`
 	PolicyVersion string          `json:"policy_version,omitempty"`
 	Payload       json.RawMessage `json:"payload"`
+	// IdempotencyKey, when set, makes a retried append with the same (chain, key) a no-op
+	// that returns the original record instead of creating a new one. Optional; additive.
+	IdempotencyKey string `json:"idempotency_key,omitempty"`
 }
 
 // Record is a stored record.
 type Record struct {
-	ID            string          `json:"id"`
-	Chain         string          `json:"chain"`
-	Seq           int64           `json:"seq"`
-	Type          string          `json:"type"`
-	GoalID        string          `json:"goal_id,omitempty"`
-	ActorChain    json.RawMessage `json:"actor_chain"`
-	PolicyVersion string          `json:"policy_version,omitempty"`
-	Payload       json.RawMessage `json:"payload"`
-	CreatedAt     time.Time       `json:"created_at"`
-	PrevHash      string          `json:"prev_hash"`
-	Hash          string          `json:"hash"`
+	ID             string          `json:"id"`
+	Chain          string          `json:"chain"`
+	Seq            int64           `json:"seq"`
+	Type           string          `json:"type"`
+	GoalID         string          `json:"goal_id,omitempty"`
+	ActorChain     json.RawMessage `json:"actor_chain"`
+	PolicyVersion  string          `json:"policy_version,omitempty"`
+	Payload        json.RawMessage `json:"payload"`
+	CreatedAt      time.Time       `json:"created_at"`
+	PrevHash       string          `json:"prev_hash"`
+	Hash           string          `json:"hash"`
+	IdempotencyKey string          `json:"idempotency_key,omitempty"`
 }
 
 // ValidationError marks a client error.
@@ -226,29 +230,46 @@ func (s *Store) Append(ctx context.Context, req AppendRequest) (*Record, error) 
 	if _, err := tx.Exec(ctx, `INSERT INTO chains(name) VALUES ($1) ON CONFLICT DO NOTHING`, req.Chain); err != nil {
 		return nil, err
 	}
+	if req.IdempotencyKey != "" {
+		rows, err := tx.Query(ctx, selectColsWithKey+` WHERE chain=$1 AND idempotency_key=$2`, req.Chain, req.IdempotencyKey)
+		if err != nil {
+			return nil, err
+		}
+		existing, err := scanRecordsWithKey(rows)
+		if err != nil {
+			return nil, err
+		}
+		if len(existing) > 0 {
+			if err := tx.Commit(ctx); err != nil {
+				return nil, err
+			}
+			return &existing[0], nil
+		}
+	}
 	var headSeq int64
 	var headHash string
 	if err := tx.QueryRow(ctx, `SELECT head_seq, head_hash FROM chains WHERE name=$1 FOR UPDATE`, req.Chain).Scan(&headSeq, &headHash); err != nil {
 		return nil, err
 	}
 	rec := &Record{
-		ID:            newUUID(),
-		Chain:         req.Chain,
-		Seq:           headSeq + 1,
-		Type:          req.Type,
-		GoalID:        req.GoalID,
-		ActorChain:    acCanon,
-		PolicyVersion: req.PolicyVersion,
-		Payload:       plCanon,
-		CreatedAt:     time.Now().UTC().Truncate(time.Microsecond),
-		PrevHash:      headHash,
+		ID:             newUUID(),
+		Chain:          req.Chain,
+		Seq:            headSeq + 1,
+		Type:           req.Type,
+		GoalID:         req.GoalID,
+		ActorChain:     acCanon,
+		PolicyVersion:  req.PolicyVersion,
+		Payload:        plCanon,
+		CreatedAt:      time.Now().UTC().Truncate(time.Microsecond),
+		PrevHash:       headHash,
+		IdempotencyKey: req.IdempotencyKey,
 	}
 	if rec.Hash, err = ComputeHash(rec); err != nil {
 		return nil, err
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO records(id,chain,seq,type,goal_id,actor_chain,policy_version,payload,created_at,prev_hash,hash)
-		VALUES ($1,$2,$3,$4,NULLIF($5,''),$6,NULLIF($7,''),$8,$9,$10,$11)`,
-		rec.ID, rec.Chain, rec.Seq, rec.Type, rec.GoalID, string(rec.ActorChain), rec.PolicyVersion, string(rec.Payload), rec.CreatedAt, rec.PrevHash, rec.Hash)
+	_, err = tx.Exec(ctx, `INSERT INTO records(id,chain,seq,type,goal_id,actor_chain,policy_version,payload,created_at,prev_hash,hash,idempotency_key)
+		VALUES ($1,$2,$3,$4,NULLIF($5,''),$6,NULLIF($7,''),$8,$9,$10,$11,NULLIF($12,''))`,
+		rec.ID, rec.Chain, rec.Seq, rec.Type, rec.GoalID, string(rec.ActorChain), rec.PolicyVersion, string(rec.Payload), rec.CreatedAt, rec.PrevHash, rec.Hash, rec.IdempotencyKey)
 	if err != nil {
 		return nil, err
 	}
@@ -284,6 +305,8 @@ type Query struct {
 
 const selectCols = `SELECT id::text, chain, seq, type, COALESCE(goal_id,''), actor_chain::text, COALESCE(policy_version,''), payload::text, created_at, prev_hash, hash FROM records`
 
+const selectColsWithKey = `SELECT id::text, chain, seq, type, COALESCE(goal_id,''), actor_chain::text, COALESCE(policy_version,''), payload::text, created_at, prev_hash, hash, COALESCE(idempotency_key,'') FROM records`
+
 func scanRecords(rows pgx.Rows) ([]Record, error) {
 	defer rows.Close()
 	out := []Record{}
@@ -291,6 +314,23 @@ func scanRecords(rows pgx.Rows) ([]Record, error) {
 		var r Record
 		var ac, pl string
 		if err := rows.Scan(&r.ID, &r.Chain, &r.Seq, &r.Type, &r.GoalID, &ac, &r.PolicyVersion, &pl, &r.CreatedAt, &r.PrevHash, &r.Hash); err != nil {
+			return nil, err
+		}
+		r.CreatedAt = r.CreatedAt.UTC()
+		r.ActorChain, r.Payload = json.RawMessage(ac), json.RawMessage(pl)
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// scanRecordsWithKey scans rows selected with selectColsWithKey (adds idempotency_key).
+func scanRecordsWithKey(rows pgx.Rows) ([]Record, error) {
+	defer rows.Close()
+	out := []Record{}
+	for rows.Next() {
+		var r Record
+		var ac, pl string
+		if err := rows.Scan(&r.ID, &r.Chain, &r.Seq, &r.Type, &r.GoalID, &ac, &r.PolicyVersion, &pl, &r.CreatedAt, &r.PrevHash, &r.Hash, &r.IdempotencyKey); err != nil {
 			return nil, err
 		}
 		r.CreatedAt = r.CreatedAt.UTC()
