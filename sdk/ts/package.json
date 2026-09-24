@@ -1,20 +1,51 @@
 {
   "name": "@celaris/ledger-sdk",
-  "version": "0.1.0",
-  "description": "Client for the Ledger tamper-evident agent decision log",
+  "version": "0.2.0",
+  "description": "Client for the Ledger tamper-evident agent decision log, with optional framework adapters",
   "license": "Apache-2.0",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./actorChain": {
+      "types": "./dist/actorChain.d.ts",
+      "default": "./dist/actorChain.js"
+    },
+    "./vocab": {
+      "types": "./dist/vocab.d.ts",
+      "default": "./dist/vocab.js"
+    },
+    "./withLedger": {
+      "types": "./dist/withLedger.d.ts",
+      "default": "./dist/withLedger.js"
+    },
+    "./adapters/langchain": {
+      "types": "./dist/adapters/langchain.d.ts",
+      "default": "./dist/adapters/langchain.js"
+    }
+  },
   "scripts": {
     "build": "tsc -p .",
-    "test": "tsc -p . && node --test dist/index.test.js"
+    "test": "tsc -p . && node --test dist/*.test.js dist/adapters/*.test.js"
   },
   "engines": {
     "node": ">=18"
   },
   "devDependencies": {
+    "@langchain/core": "^1.2.12",
     "@types/node": "^22.20.4",
     "typescript": "^5.9.3"
+  },
+  "peerDependencies": {
+    "@langchain/core": "^0.2 || ^0.3 || ^1"
+  },
+  "peerDependenciesMeta": {
+    "@langchain/core": {
+      "optional": true
+    }
   }
 }

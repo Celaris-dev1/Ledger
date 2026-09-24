@@ -48,7 +48,7 @@ ledger anchor --dir anchors         # anchors/<chain>/<seq>.json + latest.json, 
 
 | Method | Path | Notes |
 |---|---|---|
-| POST | `/v1/records` | body `{chain,type,goal_id?,actor_chain[],policy_version?,payload}` → 201 `{id,chain,seq,hash,prev_hash,created_at}`. `actor_chain` must be non-empty and start with `kind:"human"` (400 otherwise). |
+| POST | `/v1/records` | body `{chain,type,goal_id?,actor_chain[],policy_version?,payload,idempotency_key?}` → 201 `{id,chain,seq,hash,prev_hash,created_at,idempotency_key?}`. `actor_chain` must be non-empty and start with `kind:"human"` (400 otherwise). `idempotency_key`, when set, is unique per `chain`: a retry with the same `(chain, idempotency_key)` returns the original record's response instead of appending a duplicate. |
 | GET | `/v1/records?chain=&goal_id=&after_seq=&limit=` | → `{"records":[...]}` (limit default 100, max 1000) |
 | GET | `/v1/chains/{chain}/verify` | → `{chain,ok,length,head,broken_at}` (+ `reason` when broken) |
 | GET | `/v1/goals/{goal_id}/replay` | → `{"goal_id":..,"records":[...]}` ordered by time across chains |
@@ -104,6 +104,50 @@ ledger CLI ─────────────┘   verify / replay / export
 - TypeScript (`sdk/ts`, no runtime deps): `new Ledger({chain}).record(type, payload, actorChain, {goalId, policyVersion})`
 
 Both read `LEDGER_URL` / `LEDGER_TOKEN` and become no-op recorders when `LEDGER_URL` is unset.
+Both are durable and async: `record()` returns immediately after appending to an on-disk JSONL
+spool, and a background sender delivers it with retries (exponential backoff + jitter),
+surviving process restarts and ledgerd outages without reordering or dropping records. Every
+record carries an auto-generated `idempotency_key`, so a retried POST `/v1/records` (same
+`chain` + `idempotency_key`) returns the original record instead of appending a duplicate —
+this is additive and contract-compatible; callers who never set it are unaffected. Call
+`flush()`/`await flush()` to wait for the spool to drain (e.g. in a short script); this also
+runs automatically on process exit. `actor_chain` helpers (`ledger_sdk.actor_chain` /
+`@celaris/ledger-sdk/actorChain`: `human`/`agent`/`service`/`build`/`extend`) keep the
+originating human first while appending delegation hops, and a `ledger.*` vocabulary
+(`ledger_sdk.vocab` / `@celaris/ledger-sdk/vocab`: `goal.created`, `step.planned`,
+`action.attempted`, `action.completed`, `verification.recorded`, `approval.requested`/
+`granted`/`denied`, `budget.charged`) gives framework adapters a stable set of event names.
+
+### Framework adapters (optional extras — a few lines to instrument any agent loop)
+
+Python (`pip install ledger-sdk[langchain|crewai|autogen|openhands]`, imported only when used):
+
+```python
+from ledger_sdk.adapters.langchain import LedgerCallbackHandler
+chain.invoke(x, config={"callbacks": [LedgerCallbackHandler(ledger, human_id="alice")]})
+```
+
+- `ledger_sdk.adapters.langchain.LedgerCallbackHandler` — LangChain/LangGraph chain/tool/LLM start/end/error.
+- `ledger_sdk.adapters.crewai.LedgerCrewCallback` — CrewAI `step_callback`/`task_callback`.
+- `ledger_sdk.adapters.autogen.LedgerMessageHook` — AutoGen `register_hook`/intervention-handler message hooks.
+- `ledger_sdk.adapters.openhands.LedgerEventSubscriber` — OpenHands `EventStream.subscribe` callback.
+
+TypeScript:
+
+```ts
+import { LedgerCallbackHandler } from "@celaris/ledger-sdk/adapters/langchain";
+await chain.invoke(x, { callbacks: [new LedgerCallbackHandler(ledger, "alice")] });
+```
+
+- `@celaris/ledger-sdk/adapters/langchain` — LangChain.js callback handler (peer dep `@langchain/core`, optional).
+- `@celaris/ledger-sdk/withLedger` — generic `withLedger(ledger, humanId, name, fn)` wrapper for any tool function:
+  `const search = withLedger(ledger, "alice", "search", rawSearch);`
+
+Each adapter maps its framework's events onto the `ledger.*` vocabulary, carries goal/run ids
+and model/version, and keeps the human actor first. Adapter tests use lightweight fakes of
+each framework's callback interfaces (no heavy install required); the LangChain/LangChain.js
+adapters additionally run a real integration test against `langchain-core`/`@langchain/core`
+in CI.
 
 ## Tests
 
@@ -119,11 +163,13 @@ DB tests run in a throwaway schema per test and drop it afterwards.
 ## Built vs roadmap
 
 Built: schema + migrations, append-only triggers, per-chain hash chain with serialized appends,
-HTTP API, CLI (verify/replay/export/anchor), Ed25519 signed roots to files, JSON+HTML auditor
-pack (EU AI Act Art. 12/14), Python and TS SDKs, tamper tests.
+HTTP API (incl. optional `idempotency_key` on `POST /v1/records`), CLI (verify/replay/export/
+anchor), Ed25519 signed roots to files, JSON+HTML auditor pack (EU AI Act Art. 12/14), durable
+async Python and TS SDKs (spool + retries + idempotency + actor_chain/vocab helpers) with
+framework adapters for LangGraph/LangChain, CrewAI, AutoGen, OpenHands (Python) and
+LangChain.js + a generic `withLedger` wrapper (TS), tamper tests.
 
 Not yet built (the "fully built version"):
-- Native adapters for LangGraph, CrewAI, AutoGen, OpenHands.
 - Anchoring to an external public timestamping service (RFC 3161 / transparency log) or automatic
   scheduled commits of the anchor dir to a public repo; today `ledger anchor` is run by cron/CI.
 - Live replay UI (timeline scrubbing); only JSON replay and a static HTML narrative exist.

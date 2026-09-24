@@ -29,6 +29,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.11" }
+      - name: install optional adapter deps (best-effort; adapter tests skip cleanly if absent)
+        run: pip install langchain-core || true
       - run: python -m unittest -v
         working-directory: sdk/python
   sdk-ts:
