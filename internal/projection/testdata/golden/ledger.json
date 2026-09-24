@@ -1,0 +1,325 @@
+{
+  "goals": [
+    {
+      "id": "g-ledger",
+      "title": "Refund customer 42",
+      "originating_human_id": "alice",
+      "status": "done",
+      "first_record_id": "09f87044-c73d-7bdd-849e-cd8f202ab1f4"
+    }
+  ],
+  "goal_steps": [
+    {
+      "id": "5facb537-006f-576b-82e2-c33053bcf72b",
+      "goal_id": "g-ledger",
+      "step_no": 2,
+      "description": "refund",
+      "status": "planned",
+      "record_id": "48f84ea3-7be2-1ed8-0977-f4de2d24bb43"
+    },
+    {
+      "id": "974033ba-15ae-5d4e-8b83-8ed2d4db5e4c",
+      "goal_id": "g-ledger",
+      "step_no": 1,
+      "description": "look up order",
+      "status": "done",
+      "record_id": "a1267f64-ff92-4677-7503-a557b41ae981"
+    }
+  ],
+  "action_attempts": [
+    {
+      "id": "567f93bf-1dda-5224-992e-e19e999d0c3a",
+      "attempt_key": "at-1",
+      "goal_id": "g-ledger",
+      "step_id": "5facb537-006f-576b-82e2-c33053bcf72b",
+      "tool_id": "payments.refund",
+      "action_hash": "f63c944e014dc3f7f4c9af7cfe8c3a169554acdc621e8f0278b41ec82cd01f52",
+      "arguments": {
+        "amount": "19.99",
+        "order": 42,
+        "tool": "payments.refund"
+      },
+      "outcome": "succeeded",
+      "record_id": "1cf553af-231f-3263-fda1-af4e2bc37bbc",
+      "result_record_id": "4230abf0-ea8f-c572-19f6-8d153b85fb8e"
+    }
+  ],
+  "verification_results": [
+    {
+      "id": "1f42db2c-0fe5-5d01-a18b-f078684a9085",
+      "goal_id": "g-ledger",
+      "verifier": "goal-review",
+      "passed": false,
+      "record_id": "5eef71de-17d6-4d2e-4eab-013af6616dbd"
+    },
+    {
+      "id": "7a9caaa3-50e2-50ef-af04-1d31ade7f255",
+      "action_attempt_id": "567f93bf-1dda-5224-992e-e19e999d0c3a",
+      "goal_id": "g-ledger",
+      "verifier": "ledger-check",
+      "passed": true,
+      "evidence": {
+        "balance": "ok"
+      },
+      "record_id": "c2dac139-31ae-5014-1fd8-761bb251a90c"
+    }
+  ],
+  "approval_requests": [
+    {
+      "id": "a4f9b7f9-0ec1-5ee0-a191-080017e6aef6",
+      "request_key": "r-2",
+      "goal_id": "g-ledger",
+      "action_hash": "hash-of-something-else",
+      "requested_by": "agent-1",
+      "decided_by": "risk",
+      "decision": "denied",
+      "reason": "no",
+      "record_id": "b8990924-b435-35e4-c31c-d12613802210",
+      "decision_record_id": "52d50e30-cdde-c8af-f140-944d3e1ac1c1"
+    },
+    {
+      "id": "d53bf8a4-1b75-5312-9a37-d4959fe87dd3",
+      "request_key": "r-1",
+      "goal_id": "g-ledger",
+      "action_hash": "f63c944e014dc3f7f4c9af7cfe8c3a169554acdc621e8f0278b41ec82cd01f52",
+      "requested_by": "agent-1",
+      "decided_by": "alice",
+      "decision": "approved",
+      "reason": "refund \u003e 10",
+      "record_id": "fca253e3-1ccd-6b35-0b3c-de07434a15bf",
+      "decision_record_id": "b3affed8-720f-fc58-be89-76f296b8b541"
+    }
+  ],
+  "approval_decisions": [
+    {
+      "id": "5faf8b48-e5bd-5e1f-a03a-9c4c714215af",
+      "request_key": "r-2",
+      "goal_id": "g-ledger",
+      "action_hash": "hash-of-something-else",
+      "decision": "denied",
+      "decided_by": "risk",
+      "reason": "no",
+      "record_id": "52d50e30-cdde-c8af-f140-944d3e1ac1c1",
+      "matched": true
+    },
+    {
+      "id": "849aab1f-b2c3-507a-8e66-68f69c4e497f",
+      "request_key": "r-1",
+      "goal_id": "g-ledger",
+      "action_hash": "f63c944e014dc3f7f4c9af7cfe8c3a169554acdc621e8f0278b41ec82cd01f52",
+      "decision": "approved",
+      "decided_by": "alice",
+      "record_id": "b3affed8-720f-fc58-be89-76f296b8b541",
+      "matched": true
+    }
+  ],
+  "budget_ledger": [
+    {
+      "id": "6b9920e6-d6ca-5fa4-b4da-3edc0ac163cd",
+      "group": "budget:g-ledger/usd",
+      "position": 0,
+      "goal_id": "g-ledger",
+      "operator_id": "alice",
+      "resource": "usd",
+      "entry_kind": "allocation",
+      "delta": 20,
+      "balance": 20,
+      "overspent": false,
+      "record_id": "5c8459ea-bd6f-683f-c1e5-d710d883e802"
+    },
+    {
+      "id": "54481bcf-398f-5158-b573-bfb0834960be",
+      "group": "budget:g-ledger/usd",
+      "position": 1,
+      "goal_id": "g-ledger",
+      "operator_id": "agent-1",
+      "resource": "usd",
+      "entry_kind": "charge",
+      "delta": -19.99,
+      "balance": 0.010000000000001563,
+      "overspent": false,
+      "record_id": "8963aa3c-fdaa-dfe0-31eb-9ed4c3a9d946"
+    },
+    {
+      "id": "a568dbc3-360c-5c93-9a3c-96f48ff8d567",
+      "group": "budget:g-ledger/usd",
+      "position": 2,
+      "goal_id": "g-ledger",
+      "operator_id": "agent-1",
+      "resource": "usd",
+      "entry_kind": "charge",
+      "delta": -5,
+      "balance": -4.989999999999998,
+      "overspent": true,
+      "record_id": "b9137c56-4ccd-3853-579c-82af2cb02ae4"
+    }
+  ],
+  "identity_facts": [
+    {
+      "id": "01addce4-9c13-5ab0-a36c-920db0699612",
+      "operator_id": "agent-1",
+      "fact": "team",
+      "value": "payments",
+      "asserted_by": "idp",
+      "record_id": "10f1ccda-b656-9724-4a55-e143545eb523"
+    }
+  ],
+  "memory_items": [
+    {
+      "id": "cab3dbfb-1324-5cfd-87a9-65cdc81c3ff0",
+      "goal_id": "g-ledger",
+      "operator_id": "agent-1",
+      "key": "customer",
+      "value": {
+        "id": 42
+      },
+      "record_id": "12a1fa78-fe37-bc35-40bb-735a0b767ba5"
+    }
+  ],
+  "tools": [
+    {
+      "id": "payments.refund",
+      "name": "Refund",
+      "version": "2",
+      "description": "issue refund"
+    }
+  ],
+  "operators": [
+    {
+      "id": "agent-1",
+      "kind": "agent"
+    },
+    {
+      "id": "alice",
+      "kind": "human"
+    },
+    {
+      "id": "checker",
+      "kind": "service"
+    },
+    {
+      "id": "idp",
+      "kind": "service"
+    },
+    {
+      "id": "risk",
+      "kind": "service"
+    }
+  ],
+  "evidence": {
+    "09f87044-c73d-7bdd-849e-cd8f202ab1f4": {
+      "chain": "ledger",
+      "seq": 1,
+      "type": "ledger.goal.created",
+      "hash": "d0040e757272d338996894a2a025e7c750c561a99716d6cccdb08e2678ef293b"
+    },
+    "10f1ccda-b656-9724-4a55-e143545eb523": {
+      "chain": "ledger",
+      "seq": 16,
+      "type": "ledger.identity.asserted",
+      "hash": "d61c7ab4d3419edcc71cadd8a7edf7621518c3f830cb368bb7c2c75130b8c2a1"
+    },
+    "12a1fa78-fe37-bc35-40bb-735a0b767ba5": {
+      "chain": "ledger",
+      "seq": 17,
+      "type": "ledger.memory.written",
+      "hash": "a5cdb96d1befc25bdcfdd5c1f49d026c49404cfa676f7dc0996a892f7b7e7403"
+    },
+    "16c59fdf-084a-2be3-d98c-32196d9d0351": {
+      "chain": "ledger",
+      "seq": 19,
+      "type": "ledger.goal.status",
+      "hash": "121024eff2506a9a3fecbbc82531902129f79fc4a7910a7defc692f92b6fe3da"
+    },
+    "1cf553af-231f-3263-fda1-af4e2bc37bbc": {
+      "chain": "ledger",
+      "seq": 5,
+      "type": "ledger.action.attempted",
+      "hash": "dc7a541445f62928aac675a38d72f11cbe752a91491a40b340c26fd2212f4910"
+    },
+    "3e3ca8ee-f3ab-7bbf-f175-a230e3b6edb8": {
+      "chain": "ledger",
+      "seq": 18,
+      "type": "ledger.step.status",
+      "hash": "3506d45821eb3b6b1794138a235fed2cc8b20f2744c14dbb4640d11b4cd5ddf9"
+    },
+    "4230abf0-ea8f-c572-19f6-8d153b85fb8e": {
+      "chain": "ledger",
+      "seq": 10,
+      "type": "ledger.action.completed",
+      "hash": "86945429e1841ec7ed3f6cec33d3bf54f479d2acd81578193cacb29b8c4fa15e"
+    },
+    "48f84ea3-7be2-1ed8-0977-f4de2d24bb43": {
+      "chain": "ledger",
+      "seq": 4,
+      "type": "ledger.step.planned",
+      "hash": "78d3e8e24664053abb8bc5245e0764926e23c1dc4530884176e9274f0cf0d47f"
+    },
+    "52d50e30-cdde-c8af-f140-944d3e1ac1c1": {
+      "chain": "ledger",
+      "seq": 9,
+      "type": "ledger.approval.denied",
+      "hash": "f42844bfc278e98dea1a97b44869c3473beb8c0db87a73425930fba33193f7aa"
+    },
+    "5c8459ea-bd6f-683f-c1e5-d710d883e802": {
+      "chain": "ledger",
+      "seq": 13,
+      "type": "ledger.budget.allocated",
+      "hash": "2b16a5bfc346bb4cedb6c62e746413cafc7a724aaee7e72d3f5c49577285d96c"
+    },
+    "5eef71de-17d6-4d2e-4eab-013af6616dbd": {
+      "chain": "ledger",
+      "seq": 12,
+      "type": "ledger.verification.recorded",
+      "hash": "b48768c839d6ad330df7e7c2d119413ce615d21b12b436d91c25bdd7943263a5"
+    },
+    "8963aa3c-fdaa-dfe0-31eb-9ed4c3a9d946": {
+      "chain": "ledger",
+      "seq": 14,
+      "type": "ledger.budget.charged",
+      "hash": "a24e1a6d2550b0ca4f871c873d70744ffb39c20ec8132ae06332598f3d80aa12"
+    },
+    "a1267f64-ff92-4677-7503-a557b41ae981": {
+      "chain": "ledger",
+      "seq": 3,
+      "type": "ledger.step.planned",
+      "hash": "c289abd51e0f34a0bbd6d8b5bdecd6b5bdb2dedef4bc51dda1afbd182680efc9"
+    },
+    "a426718d-4ec7-0034-8ade-c5142908d302": {
+      "chain": "ledger",
+      "seq": 2,
+      "type": "ledger.tool.registered",
+      "hash": "592e84835ca5b9e98d87c66743c95f70cd811543ec56fa02c2781b64fb408698"
+    },
+    "b3affed8-720f-fc58-be89-76f296b8b541": {
+      "chain": "ledger",
+      "seq": 7,
+      "type": "ledger.approval.granted",
+      "hash": "90355262b88cb1cfb9b9a13a2e2d6f585d8b5b1468b05911ba083a1f16b4dfef"
+    },
+    "b8990924-b435-35e4-c31c-d12613802210": {
+      "chain": "ledger",
+      "seq": 8,
+      "type": "ledger.approval.requested",
+      "hash": "5fd9102e075c0cdffeb3cf47f71de7e93984742392ab17ae7bc0b9446a5d558c"
+    },
+    "b9137c56-4ccd-3853-579c-82af2cb02ae4": {
+      "chain": "ledger",
+      "seq": 15,
+      "type": "ledger.budget.charged",
+      "hash": "420bd6cd47984aac765ee4ad261b19b41d14f616bee29cd003a27d1d55140810"
+    },
+    "c2dac139-31ae-5014-1fd8-761bb251a90c": {
+      "chain": "ledger",
+      "seq": 11,
+      "type": "ledger.verification.recorded",
+      "hash": "36e142737c4d9c63c4f45ea274db79229616cff16b9400a6b7473e5f916a2cf0"
+    },
+    "fca253e3-1ccd-6b35-0b3c-de07434a15bf": {
+      "chain": "ledger",
+      "seq": 6,
+      "type": "ledger.approval.requested",
+      "hash": "7a8200591de0d1067a480cd58c4a1673cd5bc51c4907eb3e38a796e9f31ac129"
+    }
+  }
+}

@@ -34,6 +34,10 @@ usage:
   ledger keys list | rotate [--keep-old] [--operator ID]
                                          show / rotate the root-signing keyring (LEDGER_KEYRING_DIR);
                                          a rotation is recorded in the "ledger" system chain
+  ledger project [--rebuild] [--check]   project new records into the domain tables (per-chain cursors);
+                                         --rebuild starts from scratch; --check verifies rebuild == stored
+  ledger incident --goal ID [--format json|html|md] [--out FILE]
+                                         cross-product incident review for a goal (stdout by default)
 
 env: LEDGER_DATABASE_URL, LEDGER_SIGNING_KEY (base64 seed) or LEDGER_KEY_FILE, LEDGER_KEYRING_DIR,
      LEDGER_ANCHOR_DIR, LEDGER_TSA_URLS, LEDGER_TSA_TRUST, LEDGER_TSA_QUORUM, LEDGER_ANCHOR_GIT_REMOTE,
@@ -75,8 +79,11 @@ func main() {
 	keepOld := fs.Bool("keep-old", false, "keys rotate: keep the retired private key on disk")
 	operator := fs.String("operator", env("USER", "operator"), "keys rotate: human operator id recorded in the rotation record")
 	sub := ""
+	rebuild := fs.Bool("rebuild", false, "project: rebuild from scratch")
+	check := fs.Bool("check", false, "project: verify stored projection == rebuild")
+	format := fs.String("format", "json", "incident: json|html|md")
 	switch cmd {
-	case "verify", "replay", "export", "anchor":
+	case "verify", "replay", "export", "anchor", "project", "incident":
 		_ = fs.Parse(args)
 	case "keys":
 		if len(args) == 0 {
@@ -199,6 +206,16 @@ func main() {
 		}
 		f.Close()
 		fmt.Printf("wrote %s/pack.json and %s/narrative.html (%d records, intact=%v)\n", *out, *out, p.Summary.TotalRecords, p.Summary.AllChainsIntact)
+	case "project":
+		runProject(ctx, st, *rebuild, *check)
+	case "incident":
+		outFile := ""
+		fs.Visit(func(f *flag.Flag) {
+			if f.Name == "out" {
+				outFile = *out
+			}
+		})
+		runIncident(ctx, st, *goal, *format, outFile)
 	case "anchor":
 		if *external {
 			bad := false

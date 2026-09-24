@@ -1,0 +1,197 @@
+{
+  "goals": [
+    {
+      "id": "g-w",
+      "originating_human_id": "alice",
+      "status": "open",
+      "first_record_id": "85df8dae-169d-caed-627b-4bab14969e9d"
+    }
+  ],
+  "goal_steps": null,
+  "action_attempts": null,
+  "verification_results": null,
+  "approval_requests": [
+    {
+      "id": "29c3f4f3-b92a-57b7-95bb-fffcbb4e8857",
+      "request_key": "warrant:546fb079-5616-614c-c783-4211d300099c",
+      "action_hash": "h1",
+      "requested_by": "agent-a",
+      "decided_by": "warrant",
+      "decision": "approved",
+      "reason": "ok",
+      "record_id": "546fb079-5616-614c-c783-4211d300099c",
+      "decision_record_id": "546fb079-5616-614c-c783-4211d300099c"
+    },
+    {
+      "id": "97764519-2cd8-53d2-981e-2f9338654fbc",
+      "request_key": "warrant:c8affe66-0684-f772-601c-28bd1ef66a1d",
+      "action_hash": "h2",
+      "requested_by": "agent-a",
+      "decided_by": "warrant",
+      "decision": "approved",
+      "reason": "ok",
+      "record_id": "c8affe66-0684-f772-601c-28bd1ef66a1d",
+      "decision_record_id": "c8affe66-0684-f772-601c-28bd1ef66a1d"
+    },
+    {
+      "id": "cb4a71fe-3d19-5f43-9695-240ebc7fb096",
+      "request_key": "warrant:65617b4b-9789-1abe-9b47-c580f742fffb",
+      "action_hash": "h3",
+      "requested_by": "agent-a",
+      "decided_by": "warrant",
+      "decision": "denied",
+      "reason": "scope",
+      "record_id": "65617b4b-9789-1abe-9b47-c580f742fffb",
+      "decision_record_id": "65617b4b-9789-1abe-9b47-c580f742fffb"
+    }
+  ],
+  "approval_decisions": [
+    {
+      "id": "06a28205-ff4e-5640-a9c2-a20022abfce2",
+      "request_key": "warrant:65617b4b-9789-1abe-9b47-c580f742fffb",
+      "action_hash": "h3",
+      "decision": "denied",
+      "decided_by": "warrant",
+      "reason": "scope",
+      "record_id": "65617b4b-9789-1abe-9b47-c580f742fffb",
+      "matched": true
+    },
+    {
+      "id": "60bfa944-9e67-5ee0-aa26-1d97a18b7e60",
+      "request_key": "warrant:c8affe66-0684-f772-601c-28bd1ef66a1d",
+      "action_hash": "h2",
+      "decision": "approved",
+      "decided_by": "warrant",
+      "reason": "ok",
+      "record_id": "c8affe66-0684-f772-601c-28bd1ef66a1d",
+      "matched": true
+    },
+    {
+      "id": "b5dc5cf0-e7f2-5245-afcc-2084f8d03154",
+      "request_key": "warrant:546fb079-5616-614c-c783-4211d300099c",
+      "action_hash": "h1",
+      "decision": "approved",
+      "decided_by": "warrant",
+      "reason": "ok",
+      "record_id": "546fb079-5616-614c-c783-4211d300099c",
+      "matched": true
+    }
+  ],
+  "budget_ledger": [
+    {
+      "id": "019dd64d-9737-52fe-869d-a5228b54e37e",
+      "group": "budget:token/t1",
+      "position": 0,
+      "goal_id": "g-w",
+      "operator_id": "agent-a",
+      "resource": "calls:t1",
+      "entry_kind": "allocation",
+      "delta": 1,
+      "balance": 1,
+      "overspent": false,
+      "record_id": "85df8dae-169d-caed-627b-4bab14969e9d"
+    },
+    {
+      "id": "9232fa29-7f5b-5823-a4f8-d235a929cb68",
+      "group": "budget:token/t1",
+      "position": 1,
+      "operator_id": "agent-a",
+      "resource": "calls:t1",
+      "entry_kind": "charge",
+      "delta": -1,
+      "balance": 0,
+      "overspent": false,
+      "record_id": "546fb079-5616-614c-c783-4211d300099c"
+    },
+    {
+      "id": "2f1948a8-1d17-564a-9441-94fc24094233",
+      "group": "budget:token/t1",
+      "position": 2,
+      "operator_id": "agent-a",
+      "resource": "calls:t1",
+      "entry_kind": "charge",
+      "delta": -1,
+      "balance": -1,
+      "overspent": true,
+      "record_id": "c8affe66-0684-f772-601c-28bd1ef66a1d"
+    }
+  ],
+  "identity_facts": [
+    {
+      "id": "9b9dd7ac-6361-5071-8ec1-dd41d5f3c547",
+      "operator_id": "alice",
+      "fact": "warrant.token.revoked",
+      "value": {
+        "reason": "done",
+        "revoked_by": "alice",
+        "token_id": "t1"
+      },
+      "asserted_by": "alice",
+      "record_id": "3bd79b66-efd2-e2f2-18a2-8524c66311e9"
+    },
+    {
+      "id": "cb67a9d7-dbaf-5c26-9505-b43caabd9474",
+      "operator_id": "agent-a",
+      "fact": "warrant.token",
+      "value": {
+        "depth": 0,
+        "expires": null,
+        "parent_id": null,
+        "scopes": [
+          "s3:get"
+        ],
+        "token_id": "t1"
+      },
+      "asserted_by": "agent-a",
+      "record_id": "85df8dae-169d-caed-627b-4bab14969e9d"
+    }
+  ],
+  "memory_items": null,
+  "tools": null,
+  "operators": [
+    {
+      "id": "agent-a",
+      "kind": "agent"
+    },
+    {
+      "id": "alice",
+      "kind": "human"
+    },
+    {
+      "id": "warrant",
+      "kind": "service"
+    }
+  ],
+  "evidence": {
+    "3bd79b66-efd2-e2f2-18a2-8524c66311e9": {
+      "chain": "warrant",
+      "seq": 5,
+      "type": "warrant.token.revoked",
+      "hash": "822413b3ac32290ad472461e6a4910dbb572af319ca99a226ca9d60042d015ad"
+    },
+    "546fb079-5616-614c-c783-4211d300099c": {
+      "chain": "warrant",
+      "seq": 2,
+      "type": "warrant.call.allowed",
+      "hash": "c0cfed296f829a9273fec9540fe876389d061976d8d990fb1a17abd4f30782e3"
+    },
+    "65617b4b-9789-1abe-9b47-c580f742fffb": {
+      "chain": "warrant",
+      "seq": 4,
+      "type": "warrant.call.denied",
+      "hash": "05386e71d1b83090f9e26e459a07e4c31773a3054ddb39b45eb0d3ee52864b08"
+    },
+    "85df8dae-169d-caed-627b-4bab14969e9d": {
+      "chain": "warrant",
+      "seq": 1,
+      "type": "warrant.token.issued",
+      "hash": "a80aea2aaddc1b8111eb7a7e0435e98b2bdbcb46451332d9f788767cc8285211"
+    },
+    "c8affe66-0684-f772-601c-28bd1ef66a1d": {
+      "chain": "warrant",
+      "seq": 3,
+      "type": "warrant.call.allowed",
+      "hash": "c8943b0153aff02a2105955cc24ebf21e917c61acde6bb69a3130258d6377365"
+    }
+  }
+}

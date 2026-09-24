@@ -189,11 +189,53 @@ LEDGER_TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/ledger?sslm
 
 DB tests run in a throwaway schema per test and drop it afterwards.
 
+## Projections and incident review
+
+`internal/projection` turns records into `goals`, `goal_steps`, `action_attempts`,
+`verification_results`, `approval_requests` (+ `approval_decisions`), `budget_ledger`,
+`identity_facts`, `memory_items`, `tools`, `operators`.
+
+- **Vocabulary (version 1)** for agents writing directly to Ledger: `ledger.goal.created|status`,
+  `ledger.step.planned|status`, `ledger.tool.registered`, `ledger.action.attempted|completed`,
+  `ledger.verification.recorded`, `ledger.approval.requested|granted|denied`,
+  `ledger.budget.allocated|charged`, `ledger.identity.asserted`, `ledger.memory.written`.
+  Required/optional payload fields and the mapping of every product type (`gate.*`, `proof.*`,
+  `warrant.*`, `harbour.*`, `bench.*`) are in `internal/projection/vocab.go` and served at
+  `GET /v1/projections/vocabulary`.
+- **Approvals bind to `action_hash` = sha256(canonical_json(action))**. When a record carries
+  `action`, the hash is recomputed from it and a claimed `action_hash` is ignored. A decision whose
+  hash differs from its request's is stored with `matched=false` and never satisfies the request.
+- **Budgets** keep a running balance per (goal, resource). Warrant tokens get one group per token
+  (`max_calls` allocated, each allowed call charges 1). A charge that takes an allocated budget
+  below zero is flagged `overspent`.
+- **Incremental, idempotent, rebuildable.** Each record maps to ops (`projection_ops`). Every
+  affected group (a goal, attempt, approval, budget line…) is recomputed from all of its ops,
+  sorted by (created_at, chain, seq). Per-chain cursors live in `projection_cursors`. Because of
+  this, any interleaving of chains gives the same rows as a rebuild; a property test checks this.
+  Changing the projector `Version` triggers an automatic rebuild. ledgerd runs the projector
+  asynchronously after each append (one coalesced pending run) and every 30s; set
+  `LEDGER_PROJECTIONS=off` to disable it.
+- CLI: `ledger project [--rebuild] [--check]`. `--check` compares the stored rows with a fresh
+  in-memory rebuild and exits 1 on any difference.
+- API: `GET /v1/goals`, `GET /v1/goals/{id}` (steps → attempts → verifications/approvals, each
+  with evidence record ids, chain/seq and hashes), `GET /v1/approvals?status=`,
+  `GET /v1/budgets/{goal}`.
+
+**Incident review:** `ledger incident --goal ID [--format json|html|md] [--out FILE]` or
+`GET /v1/incidents/{goal_id}?format=`. It joins every chain by `goal_id` and by explicit
+cross-references in payloads (`run_id`/`*_run_id`, `token_id`/`parent_id`, `capture_id`,
+`manifest_hash`, `action_hash`, `task_id`, `request_id`, `attempt_id`, and a run id used as
+another product's goal_id), repeating until nothing new is found. The output is one ordered
+narrative covering who authorised what, what ran, what was verified, which effects committed and
+which did not (two-phase intent/result), and hash-chain verification status per source chain.
+The HTML is self-contained (auto-escaped, strict CSP, no scripts) and the Markdown is escaped.
+
 ## Built vs roadmap
 
 Built: schema + migrations, append-only triggers, per-chain hash chain with serialized appends,
 HTTP API, CLI (verify/replay/export/anchor), Ed25519 signed roots to files, external anchoring (RFC 3161 N-of-M TSAs, git repo, dir) with scheduled anchoring and offline `verify --anchors` rewrite detection, key ids + keyring rotation, JSON+HTML auditor
-pack (EU AI Act Art. 12/14), Python and TS SDKs, tamper tests.
+pack (EU AI Act Art. 12/14), Python and TS SDKs, tamper tests, incremental/rebuildable projections
+into all domain tables with a query API, cross-product incident review (JSON/HTML/Markdown).
 
 Not yet built (the "fully built version"):
 - Native adapters for LangGraph, CrewAI, AutoGen, OpenHands.
@@ -203,9 +245,9 @@ Not yet built (the "fully built version"):
 - Anchor receipts are not yet included in the auditor pack.
 - Live replay UI (timeline scrubbing); only JSON replay and a static HTML narrative exist.
 - PDF rendering of the narrative (HTML only today; print-to-PDF works).
-- Automatic projection of record types into `goal_steps`, `action_attempts`,
-  `verification_results`, `approval_requests`, `budget_ledger` (tables exist; only `operators`
-  and `goals` are populated automatically).
-- Cross-product incident review joining Gate/Proof/Warrant chains into one narrative
-  (export by `goal_id` already spans chains).
-- Retention tiers and per-regime templates (SOC 2, HIPAA).
+- Projections: the query API loads the goal-filtered projection into memory per request (fine for
+  thousands of rows per goal; no pagination on `/v1/goals` / `/v1/approvals` yet). Warrant calls
+  without `goal_id` project goal-less approvals (linked to the goal only via token budgets and the
+  incident review).
+- Incident review scans every chain in memory to resolve cross-references (no ref index yet).
+- Retention tiers and per-regime templates (SOC 2, HIPAA); KMS-held keys.

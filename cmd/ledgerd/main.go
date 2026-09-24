@@ -14,6 +14,7 @@ import (
 	"github.com/Celaris-dev1/Ledger/internal/anchor"
 	"github.com/Celaris-dev1/Ledger/internal/anchoring"
 	"github.com/Celaris-dev1/Ledger/internal/api"
+	"github.com/Celaris-dev1/Ledger/internal/projection"
 	"github.com/Celaris-dev1/Ledger/internal/store"
 )
 
@@ -53,9 +54,19 @@ func main() {
 		log.Printf("ledgerd: scheduled external anchoring disabled (set LEDGER_ANCHOR_INTERVAL or LEDGER_ANCHOR_EVERY and a backend)")
 	}
 	addr := env("LEDGER_ADDR", ":8410")
+	apiSrv := &api.Server{Store: st, Token: os.Getenv("LEDGER_TOKEN"), Key: key, Anchors: anchorSvc}
+	// Projections: async, bounded (one coalesced pending run) catch-up after each
+	// append plus a periodic sweep. LEDGER_PROJECTIONS=off disables them.
+	if os.Getenv("LEDGER_PROJECTIONS") != "off" {
+		proj := &projection.PG{Pool: st.Pool}
+		worker := projection.NewWorker(proj)
+		go worker.Run(ctx)
+		apiSrv.Projections = proj
+		apiSrv.OnAppend = func(*store.Record) { worker.Notify() }
+	}
 	srv := &http.Server{
 		Addr:              addr,
-		Handler:           (&api.Server{Store: st, Token: os.Getenv("LEDGER_TOKEN"), Key: key, Anchors: anchorSvc}).Handler(),
+		Handler:           apiSrv.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	go func() {

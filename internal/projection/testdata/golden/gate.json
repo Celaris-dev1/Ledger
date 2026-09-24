@@ -1,0 +1,167 @@
+{
+  "goals": [
+    {
+      "id": "g-gate",
+      "originating_human_id": "alice",
+      "status": "open",
+      "first_record_id": "3a55f48c-719a-a910-0a97-07d84f289ac4"
+    }
+  ],
+  "goal_steps": null,
+  "action_attempts": [
+    {
+      "id": "5d71abe6-e046-559c-a811-9ef369fd2ab4",
+      "attempt_key": "gate:run-1",
+      "goal_id": "g-gate",
+      "tool_id": "gate",
+      "action_hash": "69206d8f475c0fb62db6181e14a2b5eff9d8105393756f8b5f7e437067e7b5e9",
+      "arguments": {
+        "base": "main",
+        "files": [
+          "a.go"
+        ],
+        "head": "abc",
+        "repo": "acme/api"
+      },
+      "outcome": "block",
+      "record_id": "3a55f48c-719a-a910-0a97-07d84f289ac4",
+      "result_record_id": "c36fb8fa-5794-ba69-7527-ca8d3e84b04b"
+    }
+  ],
+  "verification_results": [
+    {
+      "id": "2fac37fb-f45e-5ac3-879d-8931d17fc6ee",
+      "action_attempt_id": "5d71abe6-e046-559c-a811-9ef369fd2ab4",
+      "goal_id": "g-gate",
+      "verifier": "gate.tests",
+      "passed": true,
+      "evidence": {
+        "findings": 0,
+        "risk": 0.1,
+        "status": "pass",
+        "summary": null
+      },
+      "record_id": "8aecd70b-f688-b9da-0a4b-ce1d5e7d0cbb"
+    },
+    {
+      "id": "5360b46b-c249-50be-877c-37c051fe5389",
+      "action_attempt_id": "5d71abe6-e046-559c-a811-9ef369fd2ab4",
+      "goal_id": "g-gate",
+      "verifier": "gate.enforced",
+      "passed": false,
+      "evidence": {
+        "decision": "block",
+        "policy_applied": null,
+        "score": null
+      },
+      "record_id": "c36fb8fa-5794-ba69-7527-ca8d3e84b04b"
+    },
+    {
+      "id": "57621c56-91a6-5069-9874-9e87d0ae14b4",
+      "action_attempt_id": "5d71abe6-e046-559c-a811-9ef369fd2ab4",
+      "goal_id": "g-gate",
+      "verifier": "gate.security",
+      "passed": false,
+      "evidence": {
+        "findings": 1,
+        "risk": 0.9,
+        "status": "fail",
+        "summary": null
+      },
+      "record_id": "48e7130f-3e68-92cd-bf90-cb357be266ee"
+    },
+    {
+      "id": "c6ecb1cd-695f-520b-b72f-cdb753b7943c",
+      "action_attempt_id": "5d71abe6-e046-559c-a811-9ef369fd2ab4",
+      "goal_id": "g-gate",
+      "verifier": "gate",
+      "passed": false,
+      "evidence": {
+        "decision": "block",
+        "policy_applied": null,
+        "score": 0.3
+      },
+      "record_id": "cc9a7209-8cda-ee39-9ebe-d1ce7f9a18df"
+    }
+  ],
+  "approval_requests": null,
+  "approval_decisions": null,
+  "budget_ledger": null,
+  "identity_facts": null,
+  "memory_items": [
+    {
+      "id": "0ba885c5-0f84-56d4-9513-cbf76de4ab75",
+      "operator_id": "admin",
+      "key": "gate.policy.acme",
+      "value": {
+        "scope": "acme",
+        "version": 3
+      },
+      "record_id": "f3c6ed13-3163-4e8a-f4dd-524e51fd4a1f"
+    }
+  ],
+  "tools": [
+    {
+      "id": "gate",
+      "name": "gate"
+    }
+  ],
+  "operators": [
+    {
+      "id": "admin",
+      "kind": "human"
+    },
+    {
+      "id": "alice",
+      "kind": "human"
+    },
+    {
+      "id": "coder",
+      "kind": "agent"
+    }
+  ],
+  "evidence": {
+    "3a55f48c-719a-a910-0a97-07d84f289ac4": {
+      "chain": "gate",
+      "seq": 2,
+      "type": "gate.run.started",
+      "hash": "75a2e7e2081ab8e7bc78637a5cbc229a482544cef04f839d44669ea21c052314"
+    },
+    "48e7130f-3e68-92cd-bf90-cb357be266ee": {
+      "chain": "gate",
+      "seq": 4,
+      "type": "gate.stage.completed",
+      "hash": "80e2a1107e0cd1b3a940c032cdc3f31027d57001cd928ad5f7d9e762e1c97dc7"
+    },
+    "8aecd70b-f688-b9da-0a4b-ce1d5e7d0cbb": {
+      "chain": "gate",
+      "seq": 3,
+      "type": "gate.stage.completed",
+      "hash": "f55528e9654f4f102fcd10eba9eefb18c1e20452fc281690fb32fbce290be13f"
+    },
+    "c36fb8fa-5794-ba69-7527-ca8d3e84b04b": {
+      "chain": "gate",
+      "seq": 6,
+      "type": "gate.run.enforced",
+      "hash": "e17a6376d77a8d609fbd38dcfed7bced9f441774b312f4f5a78733fd5f4dc02c"
+    },
+    "c66e557d-325d-e244-1df0-93420ae6ff16": {
+      "chain": "gate",
+      "seq": 7,
+      "type": "gate.admin.token.created",
+      "hash": "89641c86a9d36cda3dc3c05c4fe2f119646843954c93a925785859c035bb4125"
+    },
+    "cc9a7209-8cda-ee39-9ebe-d1ce7f9a18df": {
+      "chain": "gate",
+      "seq": 5,
+      "type": "gate.run.decided",
+      "hash": "79cf58e60a4526a48020ae94c847c4c6cd792f2eabdbabfb4ba7ec4df0676887"
+    },
+    "f3c6ed13-3163-4e8a-f4dd-524e51fd4a1f": {
+      "chain": "gate",
+      "seq": 1,
+      "type": "gate.policy.version.created",
+      "hash": "630125dd0478dc9e6280a476d32bb3b14cff2564108aa260606a96e074c8108f"
+    }
+  }
+}

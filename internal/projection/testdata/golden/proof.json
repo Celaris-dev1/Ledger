@@ -1,0 +1,121 @@
+{
+  "goals": [
+    {
+      "id": "prun-1",
+      "originating_human_id": "alice",
+      "status": "open",
+      "first_record_id": "b7474f81-2b60-fff0-9b65-aa29ee7bb110"
+    }
+  ],
+  "goal_steps": null,
+  "action_attempts": [
+    {
+      "id": "32184193-ef68-5c25-b03f-2a4d2c762440",
+      "attempt_key": "proof:c1",
+      "goal_id": "prun-1",
+      "tool_id": "proof.fetch",
+      "action_hash": "8ca3ab0c6b7370c576c548667d9fbbb992a8b27fc87f7ef18be9007c1815c142",
+      "arguments": {
+        "url": "https://example.com/"
+      },
+      "outcome": "captured",
+      "record_id": "b7474f81-2b60-fff0-9b65-aa29ee7bb110",
+      "result_record_id": "b7474f81-2b60-fff0-9b65-aa29ee7bb110"
+    },
+    {
+      "id": "6fccf656-feca-5a8b-8906-d2bbdb8dcbd8",
+      "attempt_key": "proof:c2",
+      "goal_id": "prun-1",
+      "tool_id": "proof.fetch",
+      "action_hash": "2089a326192e3ef119e9a6331d8b48c16bf4c97e7b738ae7874eae3967901850",
+      "arguments": {
+        "url": "https://example.com/private"
+      },
+      "outcome": "not_fetched",
+      "record_id": "57e893e1-d888-ec3a-8072-a2c3004789cb",
+      "result_record_id": "57e893e1-d888-ec3a-8072-a2c3004789cb"
+    }
+  ],
+  "verification_results": [
+    {
+      "id": "18ae5121-c0ac-53da-b04b-ea69a061e67b",
+      "action_attempt_id": "6fccf656-feca-5a8b-8906-d2bbdb8dcbd8",
+      "goal_id": "prun-1",
+      "verifier": "proof.compliance",
+      "passed": false,
+      "evidence": {
+        "robots_allowed": false,
+        "violations": [
+          "robots"
+        ]
+      },
+      "record_id": "57e893e1-d888-ec3a-8072-a2c3004789cb"
+    },
+    {
+      "id": "5ef33276-c541-5d4f-86ff-1e3948b14d7a",
+      "goal_id": "prun-1",
+      "verifier": "proof.manifest",
+      "passed": true,
+      "evidence": {
+        "capture_count": 2,
+        "captures_root": "cr",
+        "key_id": "k",
+        "manifest_hash": "mh"
+      },
+      "record_id": "aff1f657-37cb-87fd-07f5-e56baaaa4729"
+    },
+    {
+      "id": "f291e3f4-64fe-5894-9e1b-1c3388187eae",
+      "action_attempt_id": "32184193-ef68-5c25-b03f-2a4d2c762440",
+      "goal_id": "prun-1",
+      "verifier": "proof.compliance",
+      "passed": true,
+      "evidence": {
+        "robots_allowed": true,
+        "violations": null
+      },
+      "record_id": "b7474f81-2b60-fff0-9b65-aa29ee7bb110"
+    }
+  ],
+  "approval_requests": null,
+  "approval_decisions": null,
+  "budget_ledger": null,
+  "identity_facts": null,
+  "memory_items": null,
+  "tools": [
+    {
+      "id": "proof.fetch",
+      "name": "proof.fetch"
+    }
+  ],
+  "operators": [
+    {
+      "id": "alice",
+      "kind": "human"
+    },
+    {
+      "id": "proof",
+      "kind": "service"
+    }
+  ],
+  "evidence": {
+    "57e893e1-d888-ec3a-8072-a2c3004789cb": {
+      "chain": "proof",
+      "seq": 2,
+      "type": "proof.fetch.captured",
+      "hash": "0a1af99543841b302eff547aa37908d167d5c6d707ef611fe52e9e1ed616f8a5"
+    },
+    "aff1f657-37cb-87fd-07f5-e56baaaa4729": {
+      "chain": "proof",
+      "seq": 3,
+      "type": "proof.manifest.signed",
+      "hash": "caaf9654194ee1113631bbddc390126f0a5505cba2b4aa28a6d768a9d4e1b659"
+    },
+    "b7474f81-2b60-fff0-9b65-aa29ee7bb110": {
+      "chain": "proof",
+      "seq": 1,
+      "type": "proof.fetch.captured",
+      "hash": "6f69198eb8fcd1e53d128367e3a4cf79ab3408c39c8ea079b8168094558a1450"
+    }
+  }
+}
