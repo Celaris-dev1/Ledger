@@ -9,6 +9,22 @@ mapped to EU AI Act Articles 12 and 14.
 Ledger connects the other products: Gate, Proof, Warrant, Harbour and Bench each write to
 their own chain (chain name = product name) through the HTTP API below.
 
+## Setup
+
+Requirements: Go 1.24+ and Postgres 16 (or Docker to run it).
+
+```sh
+scripts/setup.sh            # check prerequisites, build, create the database on local Postgres, write .env
+scripts/setup.sh --docker   # same, but start Postgres with docker compose
+scripts/setup.sh --no-db    # build only
+set -a; . ./.env; set +a    # load the generated config into your shell
+```
+
+The script builds `bin/ledger` and `bin/ledgerd`, creates the `ledger` database if Postgres is reachable
+(override the admin connection with `PG_ADMIN_URL`), and writes a `.env` (mode 0600, gitignored)
+with freshly generated tokens and keys. It is safe to re-run: an existing `.env` or database
+is never overwritten. It finishes by printing the commands to start Ledger.
+
 ## Quickstart
 
 ```sh
@@ -602,3 +618,8 @@ Not yet built (the "fully built version"):
   `--tenant` flag; use the physical `t/<tenant>/<chain>` names.
 - Backup is a directory, not a single archive. Restore goes only into chains that do not exist
   yet; there is no incremental or point-in-time restore.
+
+## License
+
+Apache License 2.0; see [LICENSE](LICENSE). Self-hosted: you run Ledger on your own
+infrastructure. No hosted service is required and none is contacted.
