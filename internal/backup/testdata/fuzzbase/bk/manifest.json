@@ -1,0 +1,121 @@
+{
+  "format": "ledger-backup/v1",
+  "created_at": "2026-09-24T05:51:20.153023312Z",
+  "chains": [
+    {
+      "name": "bench",
+      "tenant": "default",
+      "head_seq": 1,
+      "head_hash": "e8742fd92e4d3d776e5fd92678a355ed7091e89bf6adb1cd4b847fc2caad574f",
+      "file": "chains/00000-bench.jsonl"
+    },
+    {
+      "name": "gate",
+      "tenant": "default",
+      "head_seq": 4,
+      "head_hash": "33c608b47fe83ec8cdd45233edfc6c91baaf54b6bf181b31599e15817a72ece2",
+      "file": "chains/00001-gate.jsonl"
+    },
+    {
+      "name": "harbour",
+      "tenant": "default",
+      "head_seq": 8,
+      "head_hash": "032ca6125988fe64f3c7f760464dce1e87d0e36f0075079c9f3ddda0b63aa514",
+      "file": "chains/00002-harbour.jsonl"
+    },
+    {
+      "name": "ledger",
+      "tenant": "default",
+      "head_seq": 2,
+      "head_hash": "d1a8cd0ec89aaf0a44a81aea8391ec51edc35144e384b703cace3405dd14e162",
+      "file": "chains/00003-ledger.jsonl"
+    },
+    {
+      "name": "proof",
+      "tenant": "default",
+      "head_seq": 2,
+      "head_hash": "1f99fd48f81abf97a802c1f0d2b0dfeaf871188617ae4faa31987e2ae77c4b18",
+      "file": "chains/00004-proof.jsonl"
+    },
+    {
+      "name": "t/acme/gate",
+      "tenant": "acme",
+      "head_seq": 1,
+      "head_hash": "43bd13fcc00d6ea8d08c114b5491ce7e4ceec86dc63854112be1e6a3394dcde2",
+      "file": "chains/00005-t_acme_gate.jsonl"
+    },
+    {
+      "name": "warrant",
+      "tenant": "default",
+      "head_seq": 3,
+      "head_hash": "945b37e49597122eaefcaff550227df6b897704af5497c8c3865fd21cc563923",
+      "file": "chains/00006-warrant.jsonl"
+    }
+  ],
+  "records": 21,
+  "anchor_receipts": 2,
+  "files": [
+    {
+      "path": "anchor_receipts.jsonl",
+      "sha256": "cf3bbc71a01563664142ecf4b6512ac9ccc8e1db9d8a8e4771d1eeeac353086d",
+      "bytes": 2757
+    },
+    {
+      "path": "anchors.jsonl",
+      "sha256": "1965efbe3e1de0365dfa3ae08de5fb0fc87e8a447cd8d3fcbee75e175620b217",
+      "bytes": 614
+    },
+    {
+      "path": "chains.json",
+      "sha256": "157667dae19220bc17b9f289ae46374a04dc4c51945c15f8741eac3404f97b42",
+      "bytes": 1153
+    },
+    {
+      "path": "chains/00000-bench.jsonl",
+      "sha256": "bfd96ed9fb621540a7a2c4764d23b79f0517218abb5ce0a0d75a6afd9d6bf65c",
+      "bytes": 397
+    },
+    {
+      "path": "chains/00001-gate.jsonl",
+      "sha256": "15c8b2df16f40cfe5ec2c9286cae7586ca56d927189d368cfe9a4576f2663a97",
+      "bytes": 1968
+    },
+    {
+      "path": "chains/00002-harbour.jsonl",
+      "sha256": "3bc90b4c3da02c9b0de3f75ab9fd59fd637e2e4428535f7299a46a9e013aace6",
+      "bytes": 4288
+    },
+    {
+      "path": "chains/00003-ledger.jsonl",
+      "sha256": "a2d91d571d5ca70d870268b0f0592c06b233fdde68b8f10d9cd284e84c71f958",
+      "bytes": 904
+    },
+    {
+      "path": "chains/00004-proof.jsonl",
+      "sha256": "e5acb39d943c85b61822f3fa26dde8f3630b8e2f94b188ffa7da34ed32c40d65",
+      "bytes": 1037
+    },
+    {
+      "path": "chains/00005-t_acme_gate.jsonl",
+      "sha256": "a164e9d2f745cbf4aca2c9a6c5e59ae36d8c8809b284e61ec366998c076b79e9",
+      "bytes": 344
+    },
+    {
+      "path": "chains/00006-warrant.jsonl",
+      "sha256": "e0b23010ad2408123b9deddc454e0bd5bf15c8b3894aa95180e748a754a07035",
+      "bytes": 1548
+    },
+    {
+      "path": "keys.json",
+      "sha256": "ffa84a807832f49a46d45c462e9d3638c751432e914d68b9c99f476851d52211",
+      "bytes": 284
+    }
+  ],
+  "manifest_hash": "2c8fd2a9a1deceeccc91e1a255eb201e3a4237a601556e57b52480a78d109379",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "ed25519:c78cc28287d1a63b",
+    "public_key": "Z5TcUEjHRpBDhMnF/xVRcW7v0IAGqIjGxX+wh7iuLyY=",
+    "signature": "yq461GONL7g0GELeAgGh7aVhX425D1xWvFmfVMlj5OfU238qjgMcZSCeqmIunXT5ybo3bYkUTjZtrOw2W2RQBA=="
+  }
+}

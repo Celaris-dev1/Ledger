@@ -75,6 +75,24 @@ func Verify(r Report, trust anchor.TrustSet) error {
 	return nil
 }
 
+// MaxEmbeddedReport caps the inflated size of the report embedded in a pack PDF.
+const MaxEmbeddedReport = 256 << 20
+
+// VerifyPDF extracts and verifies the signed report embedded in a pack PDF. pagesMatch reports
+// whether the PDF is byte-identical to this version's rendering of that report: the signature
+// covers only the embedded JSON, so a false value means the visible pages may have been edited
+// (or the PDF was rendered by a different Ledger version).
+func VerifyPDF(pdf []byte, trust anchor.TrustSet) (r Report, pagesMatch bool, err error) {
+	if r, err = ExtractFromPDF(pdf); err != nil {
+		return r, false, err
+	}
+	if err = Verify(r, trust); err != nil {
+		return r, false, err
+	}
+	again, rerr := RenderPDF(r)
+	return r, rerr == nil && bytes.Equal(again, pdf), nil
+}
+
 var embedRe = regexp.MustCompile(`/Type /EmbeddedFile /Length (\d+) /Filter /FlateDecode`)
 
 // ExtractFromPDF returns the report.json embedded in a pack PDF (first embedded file).
@@ -83,19 +101,24 @@ func ExtractFromPDF(pdf []byte) (Report, error) {
 	if m == nil {
 		return Report{}, errors.New("no embedded report in PDF")
 	}
-	n, _ := strconv.Atoi(string(pdf[m[2]:m[3]]))
+	n, err := strconv.Atoi(string(pdf[m[2]:m[3]]))
 	rest := pdf[m[1]:]
 	i := bytes.Index(rest, []byte("stream\n"))
-	if i < 0 || i+7+n > len(rest) {
+	// n is compared without adding (a huge /Length used to overflow i+7+n and panic)
+	if err != nil || i < 0 || n < 0 || n > len(rest)-i-7 {
 		return Report{}, errors.New("malformed embedded file stream")
 	}
 	zr, err := zlib.NewReader(bytes.NewReader(rest[i+7 : i+7+n]))
 	if err != nil {
 		return Report{}, err
 	}
-	raw, err := io.ReadAll(io.LimitReader(zr, 1<<30))
+	// bounded inflate: a small crafted stream could otherwise expand to 1 GiB in memory
+	raw, err := io.ReadAll(io.LimitReader(zr, MaxEmbeddedReport+1))
 	if err != nil {
 		return Report{}, err
+	}
+	if len(raw) > MaxEmbeddedReport {
+		return Report{}, fmt.Errorf("embedded report larger than %d bytes", MaxEmbeddedReport)
 	}
 	var r Report
 	if err := json.Unmarshal(raw, &r); err != nil {

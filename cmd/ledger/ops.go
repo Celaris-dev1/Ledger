@@ -167,18 +167,23 @@ func runRegimeExport(ctx context.Context, args []string) {
 			die("%v", err)
 		}
 		var r compliance.Report
+		trust := trustSet(ctx)
+		pagesMatch := true
 		if strings.HasPrefix(string(b), "%PDF") {
-			r, err = compliance.ExtractFromPDF(b)
-		} else {
-			err = json.Unmarshal(b, &r)
-		}
-		if err != nil {
+			r, pagesMatch, err = compliance.VerifyPDF(b, trust)
+			if err != nil {
+				fmt.Printf("INVALID  %s: %v\n", *verify, err)
+				os.Exit(1)
+			}
+		} else if err = json.Unmarshal(b, &r); err != nil {
 			die("%v", err)
 		}
-		trust := trustSet(ctx)
 		if err := compliance.Verify(r, trust); err != nil {
 			fmt.Printf("INVALID  %s: %v\n", *verify, err)
 			os.Exit(1)
+		}
+		if !pagesMatch {
+			fmt.Printf("WARNING  %s: the signed report inside verifies, but the visible PDF pages differ from this ledger's rendering of it (pages edited, or rendered by another version); trust the embedded report, not the pages\n", *verify)
 		}
 		note := "signing key trusted via keyring"
 		if trust == nil {

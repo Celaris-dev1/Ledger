@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/go-pdf/fpdf"
+
+	"github.com/Celaris-dev1/Ledger/internal/canon"
 )
 
 // WriteJSON writes the report as indented JSON.
@@ -21,7 +23,7 @@ func WriteJSON(w io.Writer, r Report) error {
 }
 
 var htmlTmpl = template.Must(template.New("r").Funcs(template.FuncMap{
-	"raw":   func(b json.RawMessage) string { return string(b) },
+	"raw":   canonText,
 	"upper": strings.ToUpper,
 	"date": func(t time.Time) string {
 		if t.IsZero() {
@@ -301,8 +303,8 @@ func RenderPDF(r Report) ([]byte, error) {
 	}
 	for _, rec := range r.Records[:n] {
 		mono(fmt.Sprintf("%s/%d %s %s goal=%s", rec.Chain, rec.Seq, rec.CreatedAt.UTC().Format(time.RFC3339), rec.Type, rec.GoalID))
-		mono("  actors " + trunc(string(rec.ActorChain), 150))
-		mono("  payload " + trunc(string(rec.Payload), 300))
+		mono("  actors " + trunc(canonText(rec.ActorChain), 150))
+		mono("  payload " + trunc(canonText(rec.Payload), 300))
 		mono("  hash " + rec.Hash)
 	}
 	var buf bytes.Buffer
@@ -332,6 +334,15 @@ func orDash(s string) string {
 		return "—"
 	}
 	return s
+}
+
+// canonText renders embedded JSON canonically, so a report rendered from its JSON round trip
+// (json.Marshal HTML-escapes raw messages: "<" becomes <) prints the same text.
+func canonText(b json.RawMessage) string {
+	if c, err := canon.CanonicalBytes(b); err == nil {
+		return string(c)
+	}
+	return string(b)
 }
 
 func fmtT(t time.Time) string {

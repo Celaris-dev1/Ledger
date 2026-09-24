@@ -1,0 +1,1 @@
+{"id":"d0dcec87-c8ba-46fc-aaeb-85f89bcb38d6","chain":"t/acme/gate","seq":1,"type":"gate.run.started","actor_chain":[{"id":"a","kind":"human"}],"payload":{"diff":"<script>&amp;</script>"},"created_at":"2026-09-24T05:51:20.144655Z","prev_hash":"","hash":"43bd13fcc00d6ea8d08c114b5491ce7e4ceec86dc63854112be1e6a3394dcde2","idempotency_key":"k-1"}
