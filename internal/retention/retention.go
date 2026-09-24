@@ -65,7 +65,12 @@ func ParseRetention(s string) (years, months, days int, err error) {
 	if m == nil {
 		return 0, 0, 0, fmt.Errorf("retention %q must look like 6y, 18m or 400d", s)
 	}
-	n, _ := strconv.Atoi(m[1])
+	// Bounded: an overflowing count used to wrap time.AddDate into the past, making every
+	// record immediately "past retention" (eligible for shredding).
+	n, err := strconv.Atoi(m[1])
+	if limit := map[string]int{"y": 1000, "m": 12000, "d": 366000}[m[2]]; err != nil || n > limit {
+		return 0, 0, 0, fmt.Errorf("retention %q is out of range (at most 1000 years)", s)
+	}
 	switch m[2] {
 	case "y":
 		return n, 0, 0, nil
@@ -79,7 +84,9 @@ func ParseRetention(s string) (years, months, days int, err error) {
 func (p Policy) Until(t time.Time) time.Time {
 	y, m, d, err := ParseRetention(p.MinRetention)
 	if err != nil {
-		return t
+		// fail safe: an unparseable (e.g. out-of-range, recorded before validation) policy
+		// retains indefinitely instead of making records eligible immediately
+		return time.Date(9999, 12, 31, 0, 0, 0, 0, time.UTC)
 	}
 	return t.AddDate(y, m, d)
 }

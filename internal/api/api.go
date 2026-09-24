@@ -191,6 +191,9 @@ func (s *Server) postRecord(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if reservedAppend(w, be, req.Chain, req.Type) {
+		return
+	}
 	if req.DataSubject != "" {
 		if s.DataKeys == nil {
 			writeErr(w, http.StatusBadRequest, "data_subject given but payload encryption is not configured (LEDGER_DATA_KEY_DIR)")

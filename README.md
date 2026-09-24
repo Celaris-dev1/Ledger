@@ -398,7 +398,9 @@ original `pack.json` + `narrative.html`.
 Records are never deleted or edited. Retention policies, legal holds and erasures are records in
 the `ledger` system chain (`ledger.retention.policy.set`, `ledger.hold.created`,
 `ledger.hold.released`, `ledger.erasure`). This means they are hash-chained, anchored, exported
-and backed up like any other record.
+and backed up like any other record. Only ledger itself writes them: `POST /v1/records` refuses
+these types (and `ledger.key.rotated`, `ledger.backup.created`) on the `ledger` chain with 403,
+so an appender cannot, say, release a legal hold.
 
 ```sh
 ledger retention set --chain '*' --regime hipaa --operator cco      # regime minimums: hipaa 6y, eu-ai-act 6m, soc2 1y
