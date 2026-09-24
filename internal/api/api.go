@@ -14,8 +14,10 @@ import (
 
 	"github.com/Celaris-dev1/Ledger/internal/anchor"
 	"github.com/Celaris-dev1/Ledger/internal/export"
+	"github.com/Celaris-dev1/Ledger/internal/keys"
 	"github.com/Celaris-dev1/Ledger/internal/projection"
 	"github.com/Celaris-dev1/Ledger/internal/store"
+	"github.com/Celaris-dev1/Ledger/internal/tenant"
 )
 
 // Backend is what the API needs from storage (lets handlers be tested without Postgres).
@@ -40,6 +42,17 @@ type Server struct {
 	// OnAppend, if set, is called after every successful append (must not block;
 	// ledgerd uses it to kick the async projector).
 	OnAppend func(*store.Record)
+
+	// Multi-tenancy (optional). When Tenants is non-empty every request must carry one of its
+	// bearer tokens; the token's tenant scopes all record reads/writes via TenantStore. A token
+	// mapped to "*" is an operator token (unscoped; the only one allowed on the projection and
+	// incident routes, which are not tenant-scoped). Token is then ignored.
+	Tenants     map[string]string
+	TenantStore func(tenant string) (Backend, error)
+	// DataKeys enables per-subject payload envelope encryption (append with "data_subject").
+	DataKeys keys.DataKeyStore
+	// Signer, if set, signs roots instead of Key (Vault Transit / AWS KMS / file).
+	Signer keys.Signer
 }
 
 // AnchorSource lists (and optionally re-verifies) external anchor receipts of a chain.
@@ -77,6 +90,19 @@ func (s *Server) Handler() http.Handler {
 
 func (s *Server) auth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if len(s.Tenants) > 0 {
+			t, ok := s.tokenTenant(r.Header.Get("Authorization"))
+			if !ok {
+				writeErr(w, http.StatusUnauthorized, "missing or invalid bearer token")
+				return
+			}
+			if t != tenant.Admin && !tenantScopedRoute(r.Pattern) {
+				writeErr(w, http.StatusForbidden, "this route is not tenant-scoped; it requires an operator (*) token")
+				return
+			}
+			next(w, r.WithContext(context.WithValue(r.Context(), tenantKey{}, t)))
+			return
+		}
 		if s.Token != "" {
 			want := "Bearer " + s.Token
 			if subtle.ConstantTimeCompare([]byte(r.Header.Get("Authorization")), []byte(want)) != 1 {
@@ -110,7 +136,31 @@ func (s *Server) postRecord(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid JSON body: "+err.Error())
 		return
 	}
-	rec, err := s.Store.Append(r.Context(), req)
+	be, ok := s.backend(w, r)
+	if !ok {
+		return
+	}
+	if req.DataSubject != "" {
+		if s.DataKeys == nil {
+			writeErr(w, http.StatusBadRequest, "data_subject given but payload encryption is not configured (LEDGER_DATA_KEY_DIR)")
+			return
+		}
+		if err := req.Validate(); err != nil {
+			writeErr(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		env, err := keys.Seal(s.DataKeys, req.DataSubject, req.Chain, req.Type, req.Payload)
+		if errors.Is(err, keys.ErrKeyDestroyed) {
+			writeErr(w, http.StatusConflict, "data subject has been erased (crypto-shredded); new records cannot be encrypted for it")
+			return
+		}
+		if err != nil {
+			s.internal(w, err)
+			return
+		}
+		req.Payload, req.DataSubject = env, ""
+	}
+	rec, err := be.Append(r.Context(), req)
 	var ve *store.ValidationError
 	if errors.As(err, &ve) {
 		writeErr(w, http.StatusBadRequest, ve.Msg)
@@ -141,7 +191,11 @@ func (s *Server) listRecords(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	recs, err := s.Store.List(r.Context(), q)
+	be, ok := s.backend(w, r)
+	if !ok {
+		return
+	}
+	recs, err := be.List(r.Context(), q)
 	if err != nil {
 		s.internal(w, err)
 		return
@@ -150,7 +204,11 @@ func (s *Server) listRecords(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) verify(w http.ResponseWriter, r *http.Request) {
-	res, err := s.Store.Verify(r.Context(), r.PathValue("chain"))
+	be, ok := s.backend(w, r)
+	if !ok {
+		return
+	}
+	res, err := be.Verify(r.Context(), r.PathValue("chain"))
 	if err != nil {
 		s.internal(w, err)
 		return
@@ -160,9 +218,26 @@ func (s *Server) verify(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) root(w http.ResponseWriter, r *http.Request) {
 	chain := r.PathValue("chain")
-	seq, head, err := s.Store.Head(r.Context(), chain)
+	be, ok := s.backend(w, r)
+	if !ok {
+		return
+	}
+	seq, head, err := be.Head(r.Context(), chain)
 	if err != nil {
 		s.internal(w, err)
+		return
+	}
+	// a tenant's root signs the physical (tenant-qualified) chain name
+	if chain, ok = physical(w, be, chain); !ok {
+		return
+	}
+	if s.Signer != nil {
+		root, err := anchor.SignWith(r.Context(), s.Signer, chain, seq, head)
+		if err != nil {
+			s.internal(w, err)
+			return
+		}
+		writeJSON(w, 200, root)
 		return
 	}
 	writeJSON(w, 200, anchor.Sign(s.Key, chain, seq, head))
@@ -175,7 +250,15 @@ func (s *Server) anchors(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	v := r.URL.Query().Get("verify")
-	out, err := s.Anchors.ChainAnchors(r.Context(), r.PathValue("chain"), v == "1" || v == "true")
+	be, ok := s.backend(w, r)
+	if !ok {
+		return
+	}
+	chain, ok := physical(w, be, r.PathValue("chain"))
+	if !ok {
+		return
+	}
+	out, err := s.Anchors.ChainAnchors(r.Context(), chain, v == "1" || v == "true")
 	if err != nil {
 		s.internal(w, err)
 		return
@@ -185,7 +268,11 @@ func (s *Server) anchors(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) replay(w http.ResponseWriter, r *http.Request) {
 	goal := r.PathValue("goal_id")
-	recs, err := s.Store.Replay(r.Context(), goal)
+	be, ok := s.backend(w, r)
+	if !ok {
+		return
+	}
+	recs, err := be.Replay(r.Context(), goal)
 	if err != nil {
 		s.internal(w, err)
 		return
@@ -195,7 +282,11 @@ func (s *Server) replay(w http.ResponseWriter, r *http.Request) {
 
 // GET /v1/export?chain=a&chain=b | goal_id=g [&format=json|html|zip]
 func (s *Server) export(w http.ResponseWriter, r *http.Request) {
-	p, err := BuildPack(r.Context(), s.Store, s.Key, r.URL.Query()["chain"], r.URL.Query().Get("goal_id"))
+	be, ok := s.backend(w, r)
+	if !ok {
+		return
+	}
+	p, err := BuildPack(r.Context(), be, s.Key, r.URL.Query()["chain"], r.URL.Query().Get("goal_id"))
 	if err != nil {
 		s.internal(w, err)
 		return

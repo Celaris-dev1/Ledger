@@ -39,6 +39,10 @@ type AppendRequest struct {
 	// IdempotencyKey, when set, makes a retried append with the same (chain, key) a no-op
 	// that returns the original record instead of creating a new one. Optional; additive.
 	IdempotencyKey string `json:"idempotency_key,omitempty"`
+	// DataSubject, when set (and ledgerd has a data key store), makes the API encrypt the payload
+	// with that subject's data key before appending (see internal/keys envelope). It is never
+	// stored or hashed itself. Optional; additive.
+	DataSubject string `json:"data_subject,omitempty"`
 }
 
 // Record is a stored record.
