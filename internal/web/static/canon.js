@@ -83,7 +83,7 @@
       }
     }
     function value(depth) {
-      if (depth > 10000) fail("nesting too deep");
+      if (depth >= 10000) fail("nesting too deep"); // Go: at most 10000 nested arrays/objects
       ws();
       var c = text[i];
       if (c === "{") {

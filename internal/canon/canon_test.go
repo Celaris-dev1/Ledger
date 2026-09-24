@@ -24,3 +24,15 @@ func TestHashDeterministicAndChained(t *testing.T) {
 		t.Fatal("prev hash not included")
 	}
 }
+
+// Regression (hardening fuzz): trailing data after the JSON value was silently dropped.
+func TestCanonicalRejectsTrailingData(t *testing.T) {
+	for _, in := range []string{`{} {}`, `{"a":1}x`, `{"a":1}]`, `1 2`} {
+		if c, err := CanonicalBytes([]byte(in)); err == nil {
+			t.Errorf("%q accepted as %q", in, c)
+		}
+	}
+	if _, err := CanonicalBytes([]byte(" {\"a\":1} \n")); err != nil {
+		t.Fatalf("surrounding whitespace must be allowed: %v", err)
+	}
+}

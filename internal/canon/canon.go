@@ -9,6 +9,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"io"
 )
 
 // Normalize decodes arbitrary JSON bytes preserving number literals so they can be re-encoded canonically.
@@ -18,6 +20,11 @@ func Normalize(raw []byte) (any, error) {
 	var v any
 	if err := dec.Decode(&v); err != nil {
 		return nil, err
+	}
+	// The whole input must be one JSON value: `{} {"x":1}` or `{}garbage` used to be accepted
+	// with the rest silently dropped (and the browser verifier rejects such text).
+	if _, err := dec.Token(); err != io.EOF {
+		return nil, errors.New("canon: trailing data after JSON value")
 	}
 	return v, nil
 }
