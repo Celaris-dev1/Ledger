@@ -390,6 +390,10 @@ func TestCrossProductIncident(t *testing.T) {
 				t.Errorf("incident %s lacks %s", f, w)
 			}
 		}
+		if dump := os.Getenv("LEDGER_XPRODUCT_DUMP"); dump != "" {
+			ext := map[string]string{"html": "html", "md": "md"}[f]
+			_ = os.WriteFile(filepath.Join(dump, "incident."+ext), []byte(o), 0o644)
+		}
 	}
 	if r := d.Do("GET", "/v1/incidents/"+url.PathEscape(goal)+"?format=json", auditor, nil); r.Status != 200 {
 		t.Errorf("GET incident: %d", r.Status)

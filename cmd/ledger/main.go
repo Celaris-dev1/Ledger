@@ -40,6 +40,7 @@ usage:
                                          cross-product incident review for a goal (stdout by default)
   ledger token create --name NAME [--role writer|viewer|auditor|admin] | list | revoke ID
                                          manage API tokens (stored hashed; plaintext printed once)
+` + verifyReceiptUsage + `
 
 env: LEDGER_DATABASE_URL, LEDGER_SIGNING_KEY (base64 seed) or LEDGER_KEY_FILE, LEDGER_KEYRING_DIR,
      LEDGER_ANCHOR_DIR, LEDGER_TSA_URLS, LEDGER_TSA_TRUST, LEDGER_TSA_QUORUM, LEDGER_ANCHOR_GIT_REMOTE,
@@ -69,6 +70,10 @@ func main() {
 		os.Exit(2)
 	}
 	cmd, args := os.Args[1], os.Args[2:]
+	if cmd == "verify-receipt" {
+		runVerifyReceipt(args)
+		return
+	}
 	if runOps(cmd, args) {
 		return
 	}
@@ -226,7 +231,7 @@ func main() {
 				outFile = *out
 			}
 		})
-		runIncident(ctx, st, *goal, *format, outFile)
+		runIncident(ctx, st, *goal, *format, outFile, keyring)
 	case "anchor":
 		if *external {
 			bad := false
