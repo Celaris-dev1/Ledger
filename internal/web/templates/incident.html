@@ -1,0 +1,58 @@
+{{define "content"}}
+{{$r := .Data}}
+<div class="page-head">
+  <p class="crumbs"><a href="/goals">Goals</a> / <a href="/goals/{{seg $r.GoalID}}">{{$r.GoalID}}</a> /</p>
+  <h1>Incident review</h1>
+  <p>{{if $r.Summary.AllChainsIntact}}<span class="pill ok">all source chains verify</span>{{else}}<span class="pill bad">a source chain FAILS verification: treat this narrative as untrusted</span>{{end}}
+    {{$r.Summary.Headline}}</p>
+  <p class="muted small">Generated {{ts $r.GeneratedAt}} · originating humans: {{join $r.Summary.Humans ", "}}</p>
+  {{if .CanExport}}<p class="actions"><a class="btn" href="/v1/incidents/{{seg $r.GoalID}}?format=md">Download Markdown</a> <a class="btn" href="/v1/incidents/{{seg $r.GoalID}}?format=html">Standalone HTML</a> <a class="btn" href="/v1/incidents/{{seg $r.GoalID}}">JSON</a></p>{{end}}
+</div>
+
+<dl class="stats">
+  <div><dt>Records</dt><dd>{{$r.Summary.Records}}</dd></div>
+  <div><dt>Chains</dt><dd>{{$r.Summary.Chains}}</dd></div>
+  <div><dt>Failed checks</dt><dd{{if $r.Summary.FailedChecks}} class="bad"{{end}}>{{$r.Summary.FailedChecks}}</dd></div>
+  <div><dt>Denials</dt><dd{{if $r.Summary.Denials}} class="warn"{{end}}>{{$r.Summary.Denials}}</dd></div>
+  <div><dt>Effects committed</dt><dd>{{$r.Summary.EffectsCommitted}}</dd></div>
+  <div><dt>Effects not committed</dt><dd>{{$r.Summary.EffectsNot}}</dd></div>
+</dl>
+
+<h2>Chain verification per source</h2>
+<div class="table-wrap"><table class="data"><thead><tr><th scope="col">Chain</th><th scope="col">Status</th><th scope="col" class="num">Length</th><th scope="col">Head</th><th scope="col" class="num">In incident</th></tr></thead><tbody>
+{{range $r.Chains}}<tr><th scope="row"><a href="/chains/{{seg .Chain}}">{{.Chain}}</a></th><td>{{if .OK}}<span class="pill ok">intact</span>{{else}}<span class="pill bad">broken at #{{deref .BrokenAt}}</span> {{.Reason}}{{end}}</td><td class="num">{{.Length}}</td><td><span class="hash" title="{{.Head}}">{{short .Head}}</span></td><td class="num">{{.Records}}</td></tr>
+{{end}}</tbody></table></div>
+
+<h2>Who authorised what</h2>
+<div class="table-wrap"><table class="data"><thead><tr><th scope="col">When</th><th scope="col">Decision</th><th scope="col">Who</th><th scope="col">What</th><th scope="col">Record</th></tr></thead><tbody>
+{{range $r.Authorisations}}<tr><td class="nowrap">{{ts .At}}</td><td>{{if eq .Decision "denied" "revoked"}}<span class="pill bad">{{.Decision}}</span>{{else}}<span class="pill">{{.Decision}}</span>{{end}}</td><td>{{.Who}}</td><td>{{.What}}</td><td class="mono small">{{.Source}}</td></tr>
+{{else}}<tr><td colspan="5" class="muted">No authorisation records.</td></tr>{{end}}</tbody></table></div>
+
+<h2>What ran</h2>
+<div class="table-wrap"><table class="data"><thead><tr><th scope="col">When</th><th scope="col">Who</th><th scope="col">What</th><th scope="col">Record</th></tr></thead><tbody>
+{{range $r.Ran}}<tr><td class="nowrap">{{ts .At}}</td><td>{{.Who}}</td><td>{{.Summary}}</td><td><a class="ev" href="/r/{{seg .Chain}}/{{.Seq}}">{{.Chain}}#{{.Seq}}</a></td></tr>
+{{else}}<tr><td colspan="4" class="muted">Nothing recorded as run.</td></tr>{{end}}</tbody></table></div>
+
+<h2>What was verified</h2>
+<div class="table-wrap"><table class="data"><thead><tr><th scope="col">When</th><th scope="col">Verifier</th><th scope="col">Result</th><th scope="col">Detail</th><th scope="col">Record</th></tr></thead><tbody>
+{{range $r.Verifications}}<tr><td class="nowrap">{{ts .At}}</td><td>{{.Verifier}}</td><td>{{if .Passed}}<span class="pill ok">pass</span>{{else}}<span class="pill bad">fail</span>{{end}}</td><td>{{.Detail}}</td><td class="mono small">{{.Source}}</td></tr>
+{{else}}<tr><td colspan="5" class="muted">No verification records.</td></tr>{{end}}</tbody></table></div>
+
+<h2>Effects: committed vs not</h2>
+<div class="table-wrap"><table class="data"><thead><tr><th scope="col">Effect</th><th scope="col">Tool</th><th scope="col">Status</th><th scope="col">Intent</th><th scope="col">Result</th></tr></thead><tbody>
+{{range $r.Effects}}<tr><td class="mono">{{.ID}}</td><td>{{.Tool}}</td><td>{{if .Committed}}<span class="pill ok">{{.Status}}</span>{{else}}<span class="pill warn">{{.Status}}</span>{{end}}</td><td class="mono small">{{short .IntentRecordID}}</td><td class="mono small">{{short .ResultRecordID}}</td></tr>
+{{else}}<tr><td colspan="5" class="muted">No side effects recorded.</td></tr>{{end}}</tbody></table></div>
+
+<h2>Full narrative</h2>
+<ol class="narrative">
+{{range $r.Narrative}}
+<li class="cat-{{.Category}}">
+  <div class="n-time nowrap">{{ts .At}}</div>
+  <div class="n-body">
+    <div><span class="pill cat">{{.Category}}</span> <strong>{{.Summary}}</strong></div>
+    <div class="muted small"><code>{{.Type}}</code> · {{.Who}} · linked by {{.LinkedBy}} · <a class="ev" href="/r/{{seg .Chain}}/{{.Seq}}">{{.Chain}}#{{.Seq}}</a> <span class="hash" title="{{.Hash}}">{{short .Hash}}</span></div>
+  </div>
+</li>
+{{end}}
+</ol>
+{{end}}

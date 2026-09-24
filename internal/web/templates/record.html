@@ -1,0 +1,60 @@
+{{define "content"}}
+{{$d := .Data}}{{$r := $d.Rec}}
+<div class="page-head">
+  <p class="crumbs"><a href="/chains">Chains</a> / <a href="/chains/{{seg $r.Chain}}">{{$r.Chain}}</a> /</p>
+  <h1>{{$r.Chain}} <span class="muted">#{{$r.Seq}}</span></h1>
+  <p class="meta"><code>{{$r.Type}}</code> <span>{{ts $r.CreatedAt}}</span>
+    {{if $r.GoalID}}<span><span class="muted">goal</span> <a href="/goals/{{seg $r.GoalID}}">{{$r.GoalID}}</a></span>{{end}}</p>
+  <nav class="pager inline" aria-label="Neighbouring records">
+    {{if gt $r.Seq 1}}<a class="btn" href="/r/{{seg $r.Chain}}/{{sub $r.Seq 1}}">← #{{sub $r.Seq 1}}</a>{{end}}
+    {{if lt $r.Seq $d.ChainHead}}<a class="btn" href="/r/{{seg $r.Chain}}/{{sub $r.Seq -1}}">#{{sub $r.Seq -1}} →</a>{{end}}
+  </nav>
+</div>
+
+<div class="record-grid">
+  <section class="card" aria-labelledby="integrity-h">
+    <h2 id="integrity-h">Integrity</h2>
+    <div class="checks">
+      <div class="check" id="browser-check" data-record="{{$d.B64}}" data-prev="{{$d.PrevHash}}" data-has-prev="{{$d.HasPrev}}">
+        <div class="check-title">Recomputed in your browser</div>
+        <p class="check-body" data-role="hash-result" role="status"><span class="pill">checking…</span></p>
+        <p class="check-body" data-role="link-result"></p>
+        <noscript><p class="muted small">Needs JavaScript (WebCrypto SHA-256).</p></noscript>
+      </div>
+      <div class="check">
+        <div class="check-title">Server chain verification</div>
+        <p class="check-body">{{if $d.RecordOK}}<span class="pill ok">verified</span> chain verifies through #{{$r.Seq}}{{if $d.Verify.OK}} (whole chain intact, {{$d.Verify.Length}} records){{else}}; broken later at #{{deref $d.Verify.BrokenAt}}{{end}}{{else}}<span class="pill bad">not verified</span> chain broken at #{{deref $d.Verify.BrokenAt}}: {{$d.Verify.Reason}}{{end}}</p>
+      </div>
+      <div class="check">
+        <div class="check-title">External anchor</div>
+        <p class="check-body">{{with $d.Anchor}}{{if not .Configured}}<span class="muted">anchoring not configured on this server</span>{{else if .Error}}<span class="pill warn">{{.Error}}</span>{{else if .Covered}}{{if .CoverConsistent}}{{if derefb .CoverConsistent}}<span class="pill ok">anchored</span>{{else}}<span class="pill bad">anchor mismatch</span> the anchored head differs from the current record #{{.CoverSeq}} (chain rewritten after anchoring?){{end}}{{else}}<span class="pill ok">anchored</span>{{end}}
+          by the anchor at #{{.CoverSeq}} ({{ts .CoverAt}}) · witnesses: {{join .CoverWitnesses ", "}}{{else}}<span class="pill warn">not yet anchored</span> {{if .LastSeq}}last anchor covers #{{.LastSeq}}{{else}}this chain has never been anchored{{end}}{{end}}{{end}}</p>
+        <p class="muted small">Receipt signatures and TSA tokens are re-verified offline by <code>ledger verify --anchors</code>.</p>
+      </div>
+    </div>
+    <dl class="kv">
+      <dt>Hash</dt><dd class="mono wrap" id="stored-hash">{{$r.Hash}}</dd>
+      <dt>Prev hash</dt><dd class="mono wrap">{{if $r.PrevHash}}{{$r.PrevHash}}{{else}}<span class="muted">(genesis: empty)</span>{{end}}</dd>
+      <dt>Record id</dt><dd class="mono">{{$r.ID}}</dd>
+      <dt>Policy version</dt><dd>{{if $r.PolicyVersion}}<code>{{$r.PolicyVersion}}</code>{{else}}<span class="muted">none</span>{{end}}</dd>
+    </dl>
+  </section>
+
+  <section class="card" aria-labelledby="actors-h">
+    <h2 id="actors-h">Actor chain</h2>
+    {{if not $d.HumanOK}}<p class="alert bad">The first actor is not a human: this record violates the contract.</p>{{end}}
+    <ol class="actors">
+      {{range $i, $a := $d.Actors}}
+      <li class="actor k-{{$a.Kind}}"><span class="pill">{{$a.Kind}}</span> <strong>{{$a.ID}}</strong>{{if eq $i 0}} <span class="muted small">originating human</span>{{end}}{{if $a.Model}} <span class="muted small">{{$a.Model}}{{if $a.ModelVersion}} {{$a.ModelVersion}}{{end}}</span>{{end}}</li>
+      {{end}}
+    </ol>
+  </section>
+
+  <section class="card span2" aria-labelledby="payload-h">
+    <h2 id="payload-h">Payload</h2>
+    <pre class="payload" tabindex="0">{{$d.Payload}}</pre>
+  </section>
+</div>
+<script src="/static/canon.js"></script>
+<script src="/static/record.js"></script>
+{{end}}

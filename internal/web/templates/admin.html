@@ -1,0 +1,77 @@
+{{define "content"}}
+{{$d := .Data}}{{$csrf := .CSRF}}
+<div class="page-head">
+  <h1>Access</h1>
+  <p class="muted">Roles: <strong>admin</strong> (everything), <strong>auditor</strong> (read and export), <strong>viewer</strong> (read, no export), <strong>writer</strong> (append-only API tokens for agents and products). The legacy <code>LEDGER_TOKEN</code> authenticates as a writer.</p>
+</div>
+{{if $d.Error}}<p class="alert bad" role="alert">{{$d.Error}}</p>{{end}}
+{{if $d.NewToken}}
+<section class="card new-token" aria-labelledby="nt-h">
+  <h2 id="nt-h">Token “{{$d.NewName}}” created</h2>
+  <p>Copy it now: only its SHA-256 is stored, it cannot be shown again.</p>
+  <pre class="payload mono" tabindex="0">{{$d.NewToken}}</pre>
+</section>
+{{end}}
+
+<section class="card" aria-labelledby="tok-h">
+  <h2 id="tok-h">API tokens</h2>
+  <form method="post" action="/admin/tokens" class="row-form">
+    <input type="hidden" name="csrf_token" value="{{$csrf}}">
+    <label for="tname">Name</label><input id="tname" name="name" required maxlength="100" placeholder="e.g. harbour-prod">
+    <label for="trole">Role</label>
+    <select id="trole" name="role">{{range $d.Roles}}<option value="{{.}}"{{if eq . "writer"}} selected{{end}}>{{.}}</option>{{end}}</select>
+    <button class="btn primary" type="submit">Create token</button>
+  </form>
+  <div class="table-wrap">
+  <table class="data">
+    <thead><tr><th scope="col">Name</th><th scope="col">Role</th><th scope="col">Prefix</th><th scope="col">Created</th><th scope="col">Last used</th><th scope="col">Status</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead>
+    <tbody>
+    {{range $d.Tokens}}
+    <tr>
+      <th scope="row">{{.Name}}<div class="muted small mono">{{.ID}}</div></th>
+      <td><span class="role role-{{.Role}}">{{.Role}}</span></td>
+      <td class="mono">{{.Prefix}}…</td>
+      <td class="nowrap">{{ts .CreatedAt}}<div class="muted small">by {{.CreatedBy}}</div></td>
+      <td class="nowrap">{{if .LastUsed}}{{ts (derefT .LastUsed)}}{{else}}<span class="muted">never</span>{{end}}</td>
+      <td>{{if .RevokedAt}}<span class="pill bad">revoked</span>{{else}}<span class="pill ok">active</span>{{end}}</td>
+      <td>{{if not .RevokedAt}}<form method="post" action="/admin/tokens/{{seg .ID}}/revoke" class="inline"><input type="hidden" name="csrf_token" value="{{$csrf}}"><button class="btn danger small" type="submit">Revoke</button></form>{{end}}</td>
+    </tr>
+    {{else}}<tr><td colspan="7" class="muted">No API tokens yet.</td></tr>{{end}}
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section class="card" aria-labelledby="usr-h">
+  <h2 id="usr-h">SSO users</h2>
+  {{if not $d.SSO}}<p class="muted">Single sign-on is not configured (set <code>LEDGER_OIDC_ISSUER</code>, <code>LEDGER_OIDC_CLIENT_ID</code>, <code>LEDGER_OIDC_REDIRECT_URL</code>).</p>{{end}}
+  <div class="table-wrap">
+  <table class="data">
+    <thead><tr><th scope="col">User</th><th scope="col">Role</th><th scope="col">Status</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead>
+    <tbody>
+    {{range $u := $d.Users}}
+    <tr>
+      <th scope="row">{{$u.Email}}<div class="muted small">{{$u.Name}} · {{$u.Issuer}}</div></th>
+      <td>
+        <form method="post" action="/admin/users/{{seg $u.ID}}" class="inline">
+          <input type="hidden" name="csrf_token" value="{{$csrf}}">
+          <label class="sr-only" for="role-{{$u.ID}}">Role for {{$u.Email}}</label>
+          <select id="role-{{$u.ID}}" name="role">{{range $d.Roles}}{{if ne . "writer"}}<option value="{{.}}"{{if eq . $u.Role}} selected{{end}}>{{.}}</option>{{end}}{{end}}</select>
+          <button class="btn small" type="submit">Set role</button>
+        </form>
+      </td>
+      <td>{{if $u.Disabled}}<span class="pill bad">disabled</span>{{else}}<span class="pill ok">active</span>{{end}}</td>
+      <td>
+        <form method="post" action="/admin/users/{{seg $u.ID}}" class="inline">
+          <input type="hidden" name="csrf_token" value="{{$csrf}}">
+          <input type="hidden" name="disabled" value="{{if $u.Disabled}}false{{else}}true{{end}}">
+          <button class="btn small{{if not $u.Disabled}} danger{{end}}" type="submit">{{if $u.Disabled}}Enable{{else}}Disable{{end}}</button>
+        </form>
+      </td>
+    </tr>
+    {{else}}<tr><td colspan="4" class="muted">Nobody has signed in with SSO yet.</td></tr>{{end}}
+    </tbody>
+  </table>
+  </div>
+</section>
+{{end}}

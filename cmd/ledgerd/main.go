@@ -14,8 +14,10 @@ import (
 	"github.com/Celaris-dev1/Ledger/internal/anchor"
 	"github.com/Celaris-dev1/Ledger/internal/anchoring"
 	"github.com/Celaris-dev1/Ledger/internal/api"
+	"github.com/Celaris-dev1/Ledger/internal/auth"
 	"github.com/Celaris-dev1/Ledger/internal/projection"
 	"github.com/Celaris-dev1/Ledger/internal/store"
+	"github.com/Celaris-dev1/Ledger/internal/web"
 )
 
 func env(k, d string) string {
@@ -64,9 +66,45 @@ func main() {
 		apiSrv.Projections = proj
 		apiSrv.OnAppend = func(*store.Record) { worker.Notify() }
 	}
+	// Access control + web UI (internal/auth, internal/web; README "Web UI and access control").
+	ucfg, err := web.ConfigFromEnv(os.Getenv)
+	if err != nil {
+		log.Fatalf("ledgerd: ui/auth: %v", err)
+	}
+	for _, w := range ucfg.Warnings {
+		log.Printf("ledgerd: warning: %s", w)
+	}
+	authStore := &auth.PG{Pool: st.Pool}
+	if ucfg.Auth.Open, err = ucfg.ResolveOpen(ctx, authStore); err != nil {
+		log.Fatalf("ledgerd: auth: %v", err)
+	}
+	ucfg.Auth.Logger = log.Default()
+	authn := auth.New(ucfg.Auth, authStore)
+	apiSrv.Auth = authn
+	if ucfg.Auth.Open {
+		log.Printf("ledgerd: WARNING: open mode, authentication disabled (no LEDGER_TOKEN, SSO or API tokens; LEDGER_AUTH=on forces auth)")
+	}
+	hub := web.NewHub()
+	go web.Listen(ctx, st.Pool, hub, log.Default())
+	prevOnAppend := apiSrv.OnAppend
+	apiSrv.OnAppend = func(r *store.Record) {
+		if prevOnAppend != nil {
+			prevOnAppend(r)
+		}
+		hub.Kick()
+	}
+	ui := &web.Server{Store: st, Projections: apiSrv.Projections, Auth: authn, API: apiSrv.Handler(), Logger: log.Default(),
+		Stream: &web.Streamer{Src: &web.PGStream{Pool: st.Pool}, Hub: hub, Poll: ucfg.StreamPoll, Logger: log.Default()}}
+	if len(anchorSvc.Backends) > 0 {
+		ui.Receipts = anchorSvc
+	}
+	var handler http.Handler = ui.Handler()
+	if !ucfg.UIEnabled {
+		handler = web.APIOnly(ui)
+	}
 	srv := &http.Server{
 		Addr:              addr,
-		Handler:           apiSrv.Handler(),
+		Handler:           handler,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	go func() {

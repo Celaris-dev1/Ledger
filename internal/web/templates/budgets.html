@@ -1,0 +1,50 @@
+{{define "content"}}
+{{$d := .Data}}
+<div class="page-head">
+  <h1>Budgets</h1>
+  <form method="get" action="/budgets" class="search" role="search">
+    <label for="goal" class="sr-only">Goal id</label>
+    <input id="goal" name="goal" type="search" value="{{$d.Goal}}" placeholder="Filter by goal id">
+    <button class="btn" type="submit">Filter</button>
+    {{if $d.Goal}}<a class="btn ghost" href="/budgets">Clear</a>{{end}}
+  </form>
+</div>
+{{if not $d.Enabled}}<p class="alert warn">Projections are disabled on this server (LEDGER_PROJECTIONS=off).</p>
+{{else if not $d.Budgets}}<p class="empty">No budget lines{{if $d.Goal}} for goal {{$d.Goal}}{{end}}.</p>
+{{else}}
+<div class="cards">
+{{range $d.Budgets}}
+<article class="card budget{{if .Overspent}} over{{end}}">
+  <header class="budget-head">
+    <h2 class="mono">{{.Group}}</h2>
+    {{if .Overspent}}<span class="pill bad">overspent</span>{{else}}<span class="pill ok">within budget</span>{{end}}
+  </header>
+  <dl class="kv3">
+    <div><dt>Resource</dt><dd>{{.Resource}}</dd></div>
+    <div><dt>Allocated</dt><dd class="num">{{money .Allocated}}</dd></div>
+    <div><dt>Spent</dt><dd class="num">{{money .Spent}}</dd></div>
+    <div><dt>Balance</dt><dd class="num{{if lt .Balance 0.0}} neg{{end}}">{{money .Balance}}</dd></div>
+  </dl>
+  <details>
+    <summary>{{len .Lines}} ledger lines</summary>
+    <div class="table-wrap">
+    <table class="data compact">
+      <thead><tr><th scope="col" class="num">#</th><th scope="col">Kind</th><th scope="col">Goal</th><th scope="col">Operator</th><th scope="col" class="num">Δ</th><th scope="col" class="num">Balance</th><th scope="col">Record</th></tr></thead>
+      <tbody>
+      {{range .Lines}}
+      <tr{{if .Overspent}} class="row-bad"{{end}}>
+        <td class="num">{{.Position}}</td><td>{{.EntryKind}}</td>
+        <td>{{if .GoalID}}<a href="/goals/{{seg .GoalID}}">{{.GoalID}}</a>{{end}}</td>
+        <td>{{.OperatorID}}</td><td class="num">{{money .Delta}}</td><td class="num">{{money .Balance}}</td>
+        <td class="mono small">{{short .RecordID}}</td>
+      </tr>
+      {{end}}
+      </tbody>
+    </table>
+    </div>
+  </details>
+</article>
+{{end}}
+</div>
+{{end}}
+{{end}}

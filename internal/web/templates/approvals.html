@@ -1,0 +1,35 @@
+{{define "content"}}
+{{$d := .Data}}
+<div class="page-head">
+  <h1>Approvals</h1>
+  <p class="muted">Approval requests and decisions bound to an exact action hash. A decision for a different hash never satisfies a request.</p>
+</div>
+{{if not $d.Enabled}}<p class="alert warn">Projections are disabled on this server (LEDGER_PROJECTIONS=off).</p>{{else}}
+<nav class="tabs" aria-label="Filter by status">
+  <a href="/approvals?status=pending"{{if eq $d.Status "pending"}} aria-current="page"{{end}}>Pending <span class="count">{{index $d.Counts "pending"}}</span></a>
+  <a href="/approvals?status=approved"{{if eq $d.Status "approved"}} aria-current="page"{{end}}>Approved <span class="count">{{index $d.Counts "approved"}}</span></a>
+  <a href="/approvals?status=denied"{{if eq $d.Status "denied"}} aria-current="page"{{end}}>Denied <span class="count">{{index $d.Counts "denied"}}</span></a>
+  <a href="/approvals?status="{{if eq $d.Status ""}} aria-current="page"{{end}}>All <span class="count">{{index $d.Counts "all"}}</span></a>
+</nav>
+{{if not $d.Approvals}}<p class="empty">No {{if $d.Status}}{{$d.Status}} {{end}}approvals.</p>{{else}}
+<div class="table-wrap">
+<table class="data">
+  <caption class="sr-only">Approval requests</caption>
+  <thead><tr><th scope="col">Request</th><th scope="col">Goal</th><th scope="col">Status</th><th scope="col">Requested by</th><th scope="col">Decided by</th><th scope="col">Action hash</th><th scope="col">Evidence</th></tr></thead>
+  <tbody>
+  {{range $d.Approvals}}
+  <tr>
+    <th scope="row" class="mono">{{.RequestKey}}{{if .Reason}}<div class="muted small">{{.Reason}}</div>{{end}}</th>
+    <td>{{if .GoalID}}<a href="/goals/{{seg .GoalID}}">{{.GoalID}}</a>{{else}}<span class="muted">—</span>{{end}}</td>
+    <td><span class="pill ap-{{.Status}}">{{.Status}}</span>{{range .Decisions}}{{if not .Matched}} <span class="pill bad" title="decision for a different action hash">mismatched decision</span>{{end}}{{end}}</td>
+    <td>{{.RequestedBy}}</td>
+    <td>{{.DecidedBy}}</td>
+    <td><span class="hash" title="{{.ActionHash}}">{{short .ActionHash}}</span></td>
+    <td>{{range .Evidence}}<a class="ev" href="/r/{{seg .Chain}}/{{.Seq}}">{{.Chain}}#{{.Seq}}</a> {{end}}</td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{end}}{{end}}
+{{end}}

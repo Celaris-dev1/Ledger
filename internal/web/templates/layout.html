@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="referrer" content="same-origin">
+{{if .CSRF}}<meta name="csrf-token" content="{{.CSRF}}">{{end}}
+<title>{{.Title}} · Ledger</title>
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/static/app.css">
+<script src="/static/theme.js"></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top">
+  <div class="top-inner">
+    <a class="brand" href="/chains" aria-label="Ledger home"><span class="brand-mark" aria-hidden="true"></span>Ledger</a>
+    {{if .P}}
+    <nav aria-label="Main">
+      <ul>
+        <li><a href="/chains"{{if eq .Nav "chains"}} aria-current="page"{{end}}>Chains</a></li>
+        <li><a href="/goals"{{if eq .Nav "goals"}} aria-current="page"{{end}}>Goals</a></li>
+        <li><a href="/approvals"{{if eq .Nav "approvals"}} aria-current="page"{{end}}>Approvals</a></li>
+        <li><a href="/budgets"{{if eq .Nav "budgets"}} aria-current="page"{{end}}>Budgets</a></li>
+        {{if .IsAdmin}}<li><a href="/admin"{{if eq .Nav "admin"}} aria-current="page"{{end}}>Access</a></li>{{end}}
+      </ul>
+    </nav>
+    {{end}}
+    <div class="top-right">
+      <button type="button" class="icon-btn" id="theme-toggle" aria-label="Toggle dark mode" title="Toggle dark mode">
+        <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M12 3a9 9 0 1 0 9 9c0-.5 0-.9-.1-1.4A5.5 5.5 0 0 1 13.4 3.1 9 9 0 0 0 12 3z"/></svg>
+      </button>
+      {{if .P}}
+      <span class="who" title="{{.P.Kind}} {{.P.ID}}">{{.P.Label}} <span class="role role-{{.P.Role}}">{{.P.Role}}</span></span>
+      {{if .P.Session}}
+      <form method="post" action="/auth/logout" class="inline">
+        <input type="hidden" name="csrf_token" value="{{.CSRF}}">
+        <button type="submit" class="link-btn">Sign out</button>
+      </form>
+      {{end}}
+      {{end}}
+    </div>
+  </div>
+  {{if .Open}}<div class="banner warn" role="note">Open mode: authentication is disabled on this server (no LEDGER_TOKEN, SSO or API tokens configured). Do not expose it beyond localhost.</div>{{end}}
+</header>
+<main id="main" tabindex="-1">
+{{template "content" .}}
+</main>
+<footer class="foot"><span>Every record is part of a SHA-256 hash chain. Verify offline with <code>ledger verify</code>.</span></footer>
+</body>
+</html>

@@ -1,0 +1,130 @@
+{{define "evidence"}}{{range .}}<a class="ev" href="/r/{{seg .Chain}}/{{.Seq}}" data-jump="{{.Chain}}:{{.Seq}}" title="{{.Type}} · {{.Hash}}">{{.Chain}}#{{.Seq}}</a> {{end}}{{end}}
+
+{{define "attempt"}}
+<li class="node attempt">
+  <div class="node-head">
+    <span class="kind">Attempt</span>
+    <strong>{{if .ToolID}}{{.ToolID}}{{else}}action{{end}}</strong>
+    {{if .Outcome}}<span class="pill st-{{.Outcome}}">{{.Outcome}}</span>{{else}}<span class="pill warn">no result</span>{{end}}
+    {{if ne .Approval "none"}}<span class="pill ap-{{.Approval}}">approval: {{.Approval}}</span>{{end}}
+    {{if .ActionHash}}<span class="hash small" title="action hash {{.ActionHash}}">{{short .ActionHash}}</span>{{end}}
+  </div>
+  <div class="node-ev">{{template "evidence" .Evidence}}</div>
+  {{if or .Verifications .Approvals}}
+  <ol class="tree">
+    {{range .Approvals}}
+    <li class="node approval">
+      <div class="node-head"><span class="kind">Approval</span> <span class="pill ap-{{.Status}}">{{.Status}}</span>
+        {{if .RequestedBy}}<span class="muted">requested by</span> {{.RequestedBy}}{{end}}
+        {{if .DecidedBy}}<span class="muted">· decided by</span> {{.DecidedBy}}{{end}}
+        {{if .Reason}}<span class="muted">· {{.Reason}}</span>{{end}}</div>
+      <div class="node-ev">{{template "evidence" .Evidence}}</div>
+    </li>
+    {{end}}
+    {{range .Verifications}}
+    <li class="node verification">
+      <div class="node-head"><span class="kind">Verification</span> <strong>{{.Verifier}}</strong> {{if .Passed}}<span class="pill ok">pass</span>{{else}}<span class="pill bad">fail</span>{{end}}</div>
+      <div class="node-ev">{{template "evidence" .Evidence}}</div>
+    </li>
+    {{end}}
+  </ol>
+  {{end}}
+</li>
+{{end}}
+
+{{define "content"}}
+{{$d := .Data}}
+<div class="page-head">
+  <p class="crumbs"><a href="/goals">Goals</a> /</p>
+  <h1>{{.Title}}</h1>
+  <p class="meta">
+    <span class="mono">{{$d.ID}}</span>
+    {{with $d.Tree}}<span class="pill st-{{.Goal.Status}}">{{.Goal.Status}}</span>{{end}}
+    {{if $d.Humans}}<span><span class="muted">human</span> {{join $d.Humans ", "}}</span>{{end}}
+    <span><span class="muted">chains</span> {{join $d.Chains ", "}}</span>
+    <span>{{$d.Records}} records</span>
+    <span class="muted">{{ts $d.First}} → {{ts $d.Last}}</span>
+  </p>
+  <p class="actions">
+    <a class="btn" href="/incidents/{{seg $d.ID}}">Incident review</a>
+    {{if .CanExport}}<a class="btn" href="/v1/export?goal_id={{q $d.ID}}&amp;format=html">Auditor pack</a>{{end}}
+    <a class="btn" href="/budgets?goal={{q $d.ID}}">Budgets</a>
+  </p>
+</div>
+
+<section class="replay" id="replay" data-goal="{{$d.ID}}" aria-labelledby="replay-h">
+  <div class="section-head">
+    <h2 id="replay-h">Replay</h2>
+    <p class="muted small">Scrub like a video: drag the slider, press play, or use ← → to step between events.</p>
+  </div>
+  <div class="replay-grid">
+    <div class="replay-main">
+      <div class="controls" role="toolbar" aria-label="Replay controls">
+        <button type="button" class="icon-btn" data-act="first" aria-label="Jump to start" title="Start (Home)"><svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M5 5h2v14H5zM19 5v14L8 12z"/></svg></button>
+        <button type="button" class="icon-btn" data-act="prev" aria-label="Previous event" title="Previous event (←)"><svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M17 5v14L6 12z"/></svg></button>
+        <button type="button" class="icon-btn play" data-act="play" aria-label="Play" aria-pressed="false" title="Play / pause (Space)"><svg class="i-play" aria-hidden="true" viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M7 4v16l13-8z"/></svg><svg class="i-pause" aria-hidden="true" viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M6 4h4v16H6zM14 4h4v16h-4z"/></svg></button>
+        <button type="button" class="icon-btn" data-act="next" aria-label="Next event" title="Next event (→)"><svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M7 5v14l11-7z"/></svg></button>
+        <button type="button" class="icon-btn" data-act="last" aria-label="Jump to end" title="End (End)"><svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M17 5h2v14h-2zM5 5v14l11-7z"/></svg></button>
+        <label class="speed"><span class="sr-only">Speed</span>
+          <select data-act="speed" aria-label="Playback speed">
+            <option value="0.25">0.25×</option><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="5">5×</option><option value="10">10×</option><option value="60">60×</option>
+          </select>
+        </label>
+        <label class="toggle" title="Stream new records as they are appended"><input type="checkbox" data-act="live"> <span>Live</span></label>
+        <output class="clock" data-role="clock" aria-live="off">T+0.0s</output>
+      </div>
+      <div class="track" data-role="track" aria-hidden="true"></div>
+      <label for="scrub" class="sr-only">Replay position</label>
+      <input type="range" id="scrub" class="scrub" data-role="scrub" min="0" max="0" step="100" value="0">
+      <div class="legend" aria-hidden="true">
+        <span class="lg c-plan">plan / goal</span><span class="lg c-approval">approval / authorisation</span><span class="lg c-tool">tool call / effect</span><span class="lg c-verify">verification</span><span class="lg c-other">other</span>
+      </div>
+      <p class="status-line" data-role="status" role="status">Loading records…</p>
+      <h3 class="sr-only">Events</h3>
+      <ol class="events" data-role="events"></ol>
+      <noscript><p class="alert warn">The replay timeline needs JavaScript. Every record is listed in the <a href="/incidents/{{seg $d.ID}}">incident review</a> and on its chain page.</p></noscript>
+    </div>
+    <aside class="panel" data-role="panel" aria-label="Selected record" aria-live="polite">
+      <p class="muted">Select an event to see its record.</p>
+    </aside>
+  </div>
+</section>
+
+<section class="goal-tree" aria-labelledby="tree-h">
+  <div class="section-head">
+    <h2 id="tree-h">Steps, attempts and checks</h2>
+    <p class="muted small">From the projections. Record links jump the replay to that event.</p>
+  </div>
+  {{if not $d.Projected}}<p class="alert warn">Projections are disabled on this server; only the replay is available.</p>
+  {{else if not $d.Tree}}<p class="alert warn">This goal has records but has not been projected yet (projection runs asynchronously).</p>
+  {{else}}{{with $d.Tree}}
+  {{if .Evidence}}<p class="node-ev">Goal opened by {{template "evidence" .Evidence}}</p>{{end}}
+  {{if .Steps}}
+  <ol class="tree root">
+    {{range .Steps}}
+    <li class="node step">
+      <div class="node-head"><span class="kind">Step {{.StepNo}}</span> <strong>{{if .Description}}{{.Description}}{{else}}(no description){{end}}</strong> <span class="pill st-{{.Status}}">{{.Status}}</span></div>
+      <div class="node-ev">{{template "evidence" .Evidence}}</div>
+      {{if .Attempts}}<ol class="tree">{{range .Attempts}}{{template "attempt" .}}{{end}}</ol>{{end}}
+    </li>
+    {{end}}
+  </ol>
+  {{end}}
+  {{if .UnstepedAttempts}}<h3>Attempts without a step</h3><ol class="tree root">{{range .UnstepedAttempts}}{{template "attempt" .}}{{end}}</ol>{{end}}
+  {{if .GoalVerifications}}<h3>Goal-level verifications</h3>
+  <ol class="tree root">{{range .GoalVerifications}}
+    <li class="node verification"><div class="node-head"><span class="kind">Verification</span> <strong>{{.Verifier}}</strong> {{if .Passed}}<span class="pill ok">pass</span>{{else}}<span class="pill bad">fail</span>{{end}}</div>
+    <div class="node-ev">{{template "evidence" .Evidence}}</div></li>{{end}}
+  </ol>{{end}}
+  {{if .Approvals}}<h3>Approvals in this goal</h3>
+  <ol class="tree root">{{range .Approvals}}
+    <li class="node approval"><div class="node-head"><span class="kind">Approval</span> <span class="mono">{{.RequestKey}}</span> <span class="pill ap-{{.Status}}">{{.Status}}</span>
+      {{if .RequestedBy}}<span class="muted">requested by</span> {{.RequestedBy}}{{end}}{{if .DecidedBy}} <span class="muted">· decided by</span> {{.DecidedBy}}{{end}}</div>
+    <div class="node-ev">{{template "evidence" .Evidence}}</div></li>{{end}}
+  </ol>{{end}}
+  {{if not (or .Steps .UnstepedAttempts .GoalVerifications .Approvals)}}<p class="empty">No steps, attempts or checks projected for this goal.</p>{{end}}
+  {{end}}{{end}}
+</section>
+<script src="/static/canon.js"></script>
+<script src="/static/replay.js"></script>
+{{end}}

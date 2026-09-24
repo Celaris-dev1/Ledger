@@ -1,0 +1,7 @@
+{{define "content"}}
+<section class="card narrow">
+  <h1>{{.Data.Status}} · {{.Title}}</h1>
+  <p>{{.Data.Msg}}</p>
+  <p><a href="/chains">Back to chains</a>{{if not .P}} · <a href="/login">Sign in</a>{{end}}</p>
+</section>
+{{end}}

@@ -1,0 +1,26 @@
+{{define "content"}}
+<div class="page-head">
+  <h1>Chains</h1>
+  <p class="muted">Each product writes its own append-only chain. Verification recomputes every hash from seq 1.</p>
+</div>
+{{if not .Data}}<p class="empty">No records yet. Append one with <code>POST /v1/records</code>.</p>{{else}}
+<div class="table-wrap">
+<table class="data">
+  <caption class="sr-only">Chains with verification and anchoring status</caption>
+  <thead><tr><th scope="col">Chain</th><th scope="col" class="num">Length</th><th scope="col">Head</th><th scope="col">Verification</th><th scope="col">Last anchor</th><th scope="col">Witnesses</th></tr></thead>
+  <tbody>
+  {{range .Data}}
+  <tr>
+    <th scope="row"><a href="/chains/{{seg .Name}}">{{.Name}}</a></th>
+    <td class="num">{{.Length}}</td>
+    <td>{{if .Head}}<a class="hash" href="/r/{{seg .Name}}/{{.Length}}" title="{{.Head}}">{{short .Head}}</a>{{else}}—{{end}}</td>
+    <td>{{if .Err}}<span class="pill bad">{{.Err}}</span>{{else if .Verify.OK}}<span class="pill ok">intact</span>{{else}}<span class="pill bad">broken at #{{deref .Verify.BrokenAt}}</span> <span class="muted small">{{.Verify.Reason}}</span>{{end}}</td>
+    <td>{{if not .Anchor.Configured}}<span class="muted">not configured</span>{{else if .Anchor.Error}}<span class="pill warn">{{.Anchor.Error}}</span>{{else if .Anchor.LastSeq}}#{{.Anchor.LastSeq}} <span class="muted small">{{ts .Anchor.LastAt}}</span>{{if lt .Anchor.LastSeq .Length}} <span class="pill warn" title="records after the last anchor are not yet externally witnessed">{{sub .Length .Anchor.LastSeq}} unanchored</span>{{end}}{{else}}<span class="pill warn">never anchored</span>{{end}}</td>
+    <td>{{range .Anchor.Witnesses}}<span class="chip">{{.}}</span> {{else}}<span class="muted">—</span>{{end}}</td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{end}}
+{{end}}

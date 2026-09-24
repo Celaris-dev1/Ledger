@@ -1,0 +1,39 @@
+{{define "content"}}
+<div class="page-head">
+  <h1>Goals</h1>
+  <form method="get" action="/goals" class="search" role="search">
+    <label for="q" class="sr-only">Search goals</label>
+    <input id="q" name="q" type="search" value="{{.Data.Q}}" placeholder="Search id, title, human, status">
+    <label for="status" class="sr-only">Status</label>
+    <select id="status" name="status">
+      <option value="">any status</option>
+      {{range $s := .Data.Statuses}}<option value="{{$s}}"{{if eq $s $.Data.Status}} selected{{end}}>{{$s}}</option>{{end}}
+    </select>
+    <button class="btn" type="submit">Search</button>
+  </form>
+</div>
+{{if not .Data.Enabled}}<p class="alert warn">Projections are disabled on this server (LEDGER_PROJECTIONS=off), so goals cannot be listed. A goal's replay is still available at <code>/goals/&lt;goal_id&gt;</code>.</p>
+{{else if not .Data.Goals}}<p class="empty">{{if .Data.Total}}No goals match.{{else}}No goals projected yet.{{end}}</p>
+{{else}}
+<p class="muted small">{{len .Data.Goals}} of {{.Data.Total}} goals</p>
+<div class="table-wrap">
+<table class="data">
+  <caption class="sr-only">Goals</caption>
+  <thead><tr><th scope="col">Goal</th><th scope="col">Status</th><th scope="col">Originating human</th><th scope="col" class="num">Steps</th><th scope="col" class="num">Attempts</th><th scope="col" class="num">Checks</th><th scope="col">Attention</th></tr></thead>
+  <tbody>
+  {{range .Data.Goals}}
+  <tr>
+    <th scope="row"><a href="/goals/{{seg .ID}}">{{if .Title}}{{.Title}}{{else}}{{.ID}}{{end}}</a>{{if .Title}}<div class="muted small mono">{{.ID}}</div>{{end}}</th>
+    <td><span class="pill st-{{.Status}}">{{.Status}}</span></td>
+    <td>{{.OriginatingHumanID}}</td>
+    <td class="num">{{.Steps}}</td>
+    <td class="num">{{.Attempts}}</td>
+    <td class="num">{{.Verifications}}</td>
+    <td>{{if .Failed}}<span class="pill bad">{{.Failed}} failed</span> {{end}}{{if .Pending}}<span class="pill warn">{{.Pending}} pending</span> {{end}}{{if .Overspent}}<span class="pill bad">overspent</span>{{end}}</td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{end}}
+{{end}}

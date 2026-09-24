@@ -1,0 +1,30 @@
+{{define "content"}}
+<div class="page-head">
+  <p class="crumbs"><a href="/chains">Chains</a> /</p>
+  <h1>{{.Data.Name}}</h1>
+  <p>{{if .Data.Verify.OK}}<span class="pill ok">intact</span>{{else}}<span class="pill bad">broken at #{{deref .Data.Verify.BrokenAt}}</span> {{.Data.Verify.Reason}}{{end}}
+   <span class="muted">{{.Data.Head}} records · showing #{{.Data.FirstSeq}}–#{{.Data.LastSeq}}</span>
+   {{if .CanExport}} · <a href="/v1/export?chain={{q .Data.Name}}&amp;format=html">Auditor pack (HTML)</a> · <a href="/v1/export?chain={{q .Data.Name}}&amp;format=zip">ZIP</a>{{end}}</p>
+</div>
+<div class="table-wrap">
+<table class="data">
+  <caption class="sr-only">Records of chain {{.Data.Name}}, newest first</caption>
+  <thead><tr><th scope="col" class="num">Seq</th><th scope="col">Time (UTC)</th><th scope="col">Type</th><th scope="col">Goal</th><th scope="col">Hash</th></tr></thead>
+  <tbody>
+  {{range .Data.Records}}
+  <tr>
+    <td class="num"><a href="/r/{{seg .Chain}}/{{.Seq}}">#{{.Seq}}</a></td>
+    <td class="nowrap">{{ts .CreatedAt}}</td>
+    <td><code>{{.Type}}</code></td>
+    <td>{{if .GoalID}}<a href="/goals/{{seg .GoalID}}">{{.GoalID}}</a>{{else}}<span class="muted">—</span>{{end}}</td>
+    <td><span class="hash" title="{{.Hash}}">{{short .Hash}}</span></td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+<nav class="pager" aria-label="Pages">
+  {{if .Data.Newer}}<a class="btn" href="/chains/{{seg .Data.Name}}?to={{.Data.Newer}}">← Newer</a>{{end}}
+  {{if .Data.Older}}<a class="btn" href="/chains/{{seg .Data.Name}}?to={{.Data.Older}}">Older →</a>{{end}}
+</nav>
+{{end}}

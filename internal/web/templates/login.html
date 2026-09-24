@@ -1,0 +1,18 @@
+{{define "content"}}
+<section class="card narrow login">
+  <h1>Sign in to Ledger</h1>
+  <p class="muted">The audit trail for agents: every plan, approval, tool call and verification, hash-chained.</p>
+  {{if .Data.Error}}<p class="alert bad" role="alert">{{.Data.Error}}</p>{{end}}
+  {{if .Data.SSO}}
+  <p><a class="btn primary wide" href="/auth/login?next={{q .Data.Next}}">Continue with single sign-on</a></p>
+  <p class="divider"><span>or</span></p>
+  {{end}}
+  <form method="post" action="/auth/token" class="stack">
+    <input type="hidden" name="csrf_token" value="{{.Data.CSRF}}">
+    <input type="hidden" name="next" value="{{.Data.Next}}">
+    <label for="token">API token <span class="muted">(admin, auditor or viewer)</span></label>
+    <input id="token" name="token" type="password" autocomplete="off" required spellcheck="false" placeholder="ldg_…">
+    <button type="submit" class="btn">Sign in with token</button>
+  </form>
+</section>
+{{end}}
