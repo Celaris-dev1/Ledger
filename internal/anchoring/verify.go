@@ -169,7 +169,10 @@ func VerifyChain(chain string, recs []store.Record, receipts []StoredReceipt, op
 
 func checkReceipt(sr StoredReceipt, recs []store.Record, opt Options) AnchorCheck {
 	c := AnchorCheck{ID: sr.ID, Seq: sr.Seq, Head: sr.Head, Backend: sr.Backend, Kind: sr.Kind, KeyID: sr.KeyID, AnchoredAt: sr.AnchoredAt}
-	bad := func(status, f string, a ...any) AnchorCheck { c.Status, c.Detail = status, fmt.Sprintf(f, a...); return c }
+	bad := func(status, f string, a ...any) AnchorCheck {
+		c.Status, c.Detail = status, fmt.Sprintf(f, a...)
+		return c
+	}
 	var root anchor.Root
 	if err := json.Unmarshal([]byte(sr.RootJSON), &root); err != nil {
 		return bad(StatusInvalid, "stored root is not JSON")

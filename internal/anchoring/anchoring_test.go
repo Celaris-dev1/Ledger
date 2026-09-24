@@ -238,7 +238,7 @@ func TestConfigFromEnv(t *testing.T) {
 	ca := tsatest.NewCA("r")
 	bundle := ca.WriteBundle(t.TempDir(), "tsa.pem")
 	env := map[string]string{
-		"LEDGER_TSA_URLS": "freetsa=https://freetsa.org/tsr, digicert=http://timestamp.digicert.com,http://timestamp.sectigo.com",
+		"LEDGER_TSA_URLS":  "freetsa=https://freetsa.org/tsr, digicert=http://timestamp.digicert.com,http://timestamp.sectigo.com",
 		"LEDGER_TSA_TRUST": bundle, "LEDGER_TSA_QUORUM": "2", "LEDGER_ANCHOR_INTERVAL": "1h", "LEDGER_ANCHOR_EVERY": "100",
 		"LEDGER_ANCHOR_DIR": "/tmp/x",
 	}
