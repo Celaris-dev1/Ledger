@@ -244,6 +244,17 @@ LEDGER_TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/ledger?sslm
 
 DB tests run in a throwaway schema per test and drop it afterwards.
 
+Hardening: 20 native Go fuzz targets cover everything that parses untrusted input or must be
+bit-exact (canonical JSON, record hashing, append decoding, RFC 3161/CMS tokens mutated from a
+genuine one, roots/rotations/receipts, backup manifests, compliance JSON/PDF, retention and hold
+records, projection streams, incident references, SSE cursors, tenant names). Their seed
+corpora (`*/testdata/fuzz`, including every crasher found) run as ordinary tests;
+`.github/fuzz.sh 60s` fuzzes each target for a minute. `TestBrowserCanonDifferential` checks
+`canon.js` against Go over the corpus with node. `go test -race -run 'Concurrency|Concurrent'
+./...` (with a database) runs the concurrency suite: 64 writers per chain, racing idempotent
+retries, concurrent migrations, projector vs appends vs rebuilds, anchoring vs key rotation, SSE
+clients joining and leaving under load, and backups taken during appends.
+
 ## Projections and incident review
 
 `internal/projection` turns records into `goals`, `goal_steps`, `action_attempts`,
