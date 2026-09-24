@@ -83,6 +83,11 @@ th{color:var(--muted);font-weight:600}code{font:12px ui-monospace,Menlo,monospac
 {{range .Effects}}<tr><td><code>{{.ID}}</code></td><td>{{.Tool}}</td><td>{{if .Committed}}<span class="ok">{{.Status}}</span>{{else}}<span class="warn">{{.Status}}</span>{{end}}</td><td><code>{{.IntentRecordID}}</code></td><td><code>{{.ResultRecordID}}</code></td></tr>
 {{else}}<tr><td colspan="5" class="muted">No side effects recorded.</td></tr>{{end}}</table></div>
 
+<h2>Stack-receipts (stack-receipt/v1)</h2>
+<div class="wrap"><table><tr><th>Record</th><th>Product</th><th>Kind</th><th>Subject</th><th>Signer</th><th>Result</th><th>Links resolved</th></tr>
+{{range .Receipts}}<tr><td><code>{{.Chain}}#{{.Seq}}</code></td><td>{{.Product}}</td><td>{{.Kind}}</td><td>{{.Subject}}</td><td><code>{{.SignerKeyID}}</code></td><td>{{if .SignatureOK}}<span class="ok">verified</span>{{else}}<span class="bad">{{.Detail}}</span>{{end}}</td><td>{{range .Links}}{{.Product}}:{{.ID}}={{if .Resolved}}<span class="ok">ok</span>{{else}}<span class="warn">unresolved</span>{{end}} {{end}}</td></tr>
+{{else}}<tr><td colspan="7" class="muted">No stack-receipts found on records in this incident.</td></tr>{{end}}</table></div>
+
 <h2>Full narrative</h2>
 <div class="wrap"><table><tr><th>When</th><th>Source</th><th>Type</th><th>Who</th><th>What</th><th>Linked by</th><th>Hash</th></tr>
 {{range .Narrative}}<tr><td>{{ts .At}}</td><td><code>{{.Chain}}#{{.Seq}}</code></td><td>{{.Type}}</td><td>{{.Who}}</td><td>{{.Summary}}</td><td>{{.LinkedBy}}</td><td><code title="{{.Hash}}">{{short .Hash}}</code></td></tr>
@@ -156,6 +161,14 @@ func WriteMarkdown(w io.Writer, r *Report) error {
 	p("\n## Effects: committed vs not\n\n| Effect | Tool | Status | Intent record | Result record |\n|---|---|---|---|---|\n")
 	for _, e := range r.Effects {
 		p("| %s | %s | %s | %s | %s |\n", md(e.ID), md(e.Tool), md(e.Status), md(e.IntentRecordID), md(e.ResultRecordID))
+	}
+	p("\n## Stack-receipts (stack-receipt/v1)\n\n| Record | Product | Kind | Subject | Signer | Result |\n|---|---|---|---|---|---|\n")
+	for _, rr := range r.Receipts {
+		res := "verified"
+		if !rr.SignatureOK {
+			res = "**" + md(rr.Detail) + "**"
+		}
+		p("| %s | %s | %s | %s | %s | %s |\n", md(fmt.Sprintf("%s#%d", rr.Chain, rr.Seq)), md(rr.Product), md(rr.Kind), md(rr.Subject), md(rr.SignerKeyID), res)
 	}
 	p("\n## Full narrative\n\n| When | Source | Type | Who | What | Linked by | Hash |\n|---|---|---|---|---|---|---|\n")
 	for _, e := range r.Narrative {

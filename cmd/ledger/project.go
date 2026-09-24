@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 
+	"github.com/Celaris-dev1/Ledger/internal/anchor"
 	"github.com/Celaris-dev1/Ledger/internal/incident"
 	"github.com/Celaris-dev1/Ledger/internal/projection"
 	"github.com/Celaris-dev1/Ledger/internal/store"
@@ -40,11 +41,21 @@ func runProject(ctx context.Context, st *store.Store, rebuild, check bool) {
 	}
 }
 
-func runIncident(ctx context.Context, st *store.Store, goal, format, outFile string) {
+func runIncident(ctx context.Context, st *store.Store, goal, format, outFile string, keyring *anchor.Keyring) {
 	if goal == "" {
 		die("incident requires --goal")
 	}
-	rep, err := incident.Build(ctx, st, goal)
+	var opts []incident.Option
+	if keyring != nil {
+		opts = append(opts, incident.WithTrust(func(keyID string) (string, []byte, bool) {
+			pub, ok := keyring.Public[keyID]
+			if !ok {
+				return "", nil, false
+			}
+			return "ed25519", []byte(pub), true
+		}))
+	}
+	rep, err := incident.Build(ctx, st, goal, opts...)
 	if err != nil {
 		die("incident: %v", err)
 	}

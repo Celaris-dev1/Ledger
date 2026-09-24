@@ -16,8 +16,49 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Celaris-dev1/Ledger/internal/receipt"
 	"github.com/Celaris-dev1/Ledger/internal/store"
 )
+
+// TrustFunc resolves a stack-receipt's signer_key_id to the public key and algorithm to verify
+// it against (e.g. backed by an anchor.Keyring). ok=false means the key id is not trusted/known.
+type TrustFunc func(keyID string) (alg string, pub []byte, ok bool)
+
+// Option configures Build.
+type Option func(*buildConfig)
+
+type buildConfig struct{ trust TrustFunc }
+
+// WithTrust supplies the key lookup used to verify any stack-receipt/v1 envelopes found in
+// record payloads (as payload.receipt). Without it, receipts are still listed but reported
+// unverified.
+func WithTrust(t TrustFunc) Option { return func(c *buildConfig) { c.trust = t } }
+
+// LinkResolution is one stack-receipt link resolved (or not) against the records in this
+// incident.
+type LinkResolution struct {
+	Product  string `json:"product"`
+	ID       string `json:"id"`
+	Hash     string `json:"hash,omitempty"`
+	Resolved bool   `json:"resolved"`
+	RecordID string `json:"record_id,omitempty"`
+}
+
+// ReceiptResult is one stack-receipt/v1 envelope found among this incident's records, with its
+// verification outcome.
+type ReceiptResult struct {
+	Chain         string           `json:"chain"`
+	Seq           int64            `json:"seq"`
+	RecordID      string           `json:"record_id"`
+	Product       string           `json:"product"`
+	Kind          string           `json:"kind"`
+	Subject       string           `json:"subject,omitempty"`
+	SignerKeyID   string           `json:"signer_key_id"`
+	SignatureOK   bool             `json:"signature_ok"`
+	Trusted       bool             `json:"trusted"` // false: key id unknown to the trust store, unverified
+	Detail        string           `json:"detail"`
+	Links         []LinkResolution `json:"links,omitempty"`
+}
 
 // Source is what the builder needs from storage (*store.Store satisfies it).
 type Source interface {
@@ -94,6 +135,7 @@ type Report struct {
 	Verifications  []Verification  `json:"verifications"`
 	Effects        []Effect        `json:"effects"`
 	Narrative      []Entry         `json:"narrative"`
+	Receipts       []ReceiptResult `json:"receipts"`
 }
 
 // Summary is the headline.
@@ -106,6 +148,8 @@ type Summary struct {
 	Denials          int      `json:"denials"`
 	EffectsCommitted int      `json:"effects_committed"`
 	EffectsNot       int      `json:"effects_not_committed"`
+	ReceiptsOK       int      `json:"receipts_verified"`
+	ReceiptsFailed   int      `json:"receipts_failed"`
 	Headline         string   `json:"headline"`
 }
 
@@ -195,7 +239,11 @@ type item struct {
 }
 
 // Build assembles the incident review for goalID.
-func Build(ctx context.Context, src Source, goalID string) (*Report, error) {
+func Build(ctx context.Context, src Source, goalID string, opts ...Option) (*Report, error) {
+	cfg := buildConfig{}
+	for _, o := range opts {
+		o(&cfg)
+	}
 	chains, err := src.Chains(ctx)
 	if err != nil {
 		return nil, err
@@ -356,14 +404,91 @@ func Build(ctx context.Context, src Source, goalID string) (*Report, error) {
 	}
 	sort.Strings(rep.Summary.Humans)
 	rep.Summary.Records, rep.Summary.Chains = len(sel), len(names)
+
+	rep.Receipts = collectReceipts(sel, cfg.trust)
+	for _, rr := range rep.Receipts {
+		if rr.SignatureOK {
+			rep.Summary.ReceiptsOK++
+		} else {
+			rep.Summary.ReceiptsFailed++
+		}
+	}
+
 	integrity := "all source chains verify"
 	if !rep.Summary.AllChainsIntact {
 		integrity = "WARNING: at least one source chain FAILS verification"
 	}
-	rep.Summary.Headline = fmt.Sprintf("%d records across %d chains; %d authorisations (%d denied); %d verifications (%d failed); %d effects committed, %d not; %s.",
+	receiptNote := ""
+	if len(rep.Receipts) > 0 {
+		receiptNote = fmt.Sprintf(" %d stack-receipts (%d verified, %d failed);", len(rep.Receipts), rep.Summary.ReceiptsOK, rep.Summary.ReceiptsFailed)
+	}
+	rep.Summary.Headline = fmt.Sprintf("%d records across %d chains; %d authorisations (%d denied); %d verifications (%d failed);%s %d effects committed, %d not; %s.",
 		len(sel), len(names), len(rep.Authorisations), rep.Summary.Denials, len(rep.Verifications), rep.Summary.FailedChecks,
-		rep.Summary.EffectsCommitted, rep.Summary.EffectsNot, integrity)
+		receiptNote, rep.Summary.EffectsCommitted, rep.Summary.EffectsNot, integrity)
 	return rep, nil
+}
+
+// collectReceipts finds any stack-receipt/v1 envelope at payload.receipt on the selected
+// records, verifies it (when trust is supplied) and resolves its links against the same
+// record set.
+func collectReceipts(sel []*item, trust TrustFunc) []ReceiptResult {
+	// Index selected records by id and by hash so links resolve to what's actually in this
+	// incident (a link to a record outside the goal's blast radius is reported unresolved).
+	byID := map[string]store.Record{}
+	byHash := map[string]store.Record{}
+	for _, it := range sel {
+		byID[it.rec.ID] = it.rec
+		if it.rec.Hash != "" {
+			byHash[it.rec.Hash] = it.rec
+		}
+	}
+	var out []ReceiptResult
+	for _, it := range sel {
+		raw, ok := it.p["receipt"]
+		if !ok {
+			continue
+		}
+		b, err := json.Marshal(raw)
+		if err != nil {
+			continue
+		}
+		var env receipt.Envelope
+		if err := json.Unmarshal(b, &env); err != nil || env.Version == "" {
+			continue // not a stack-receipt envelope; some other field just happened to be named "receipt"
+		}
+		rr := ReceiptResult{
+			Chain: it.rec.Chain, Seq: it.rec.Seq, RecordID: it.rec.ID,
+			Product: env.Product, Kind: env.Kind, Subject: env.Subject, SignerKeyID: env.SignerKeyID,
+		}
+		if trust == nil {
+			rr.Detail = "no trust store configured; signature not checked"
+		} else if alg, pub, ok := trust(env.SignerKeyID); !ok {
+			rr.Detail = "signer_key_id not in trust store"
+		} else if err := receipt.Verify(env, alg, pub); err != nil {
+			rr.Detail = err.Error()
+		} else {
+			rr.SignatureOK, rr.Trusted, rr.Detail = true, true, "signature verifies"
+		}
+		for _, l := range env.Links {
+			lr := LinkResolution{Product: l.Product, ID: l.ID, Hash: l.Hash}
+			if r, ok := byID[l.ID]; ok {
+				lr.Resolved, lr.RecordID = true, r.ID
+			} else if l.Hash != "" {
+				if r, ok := byHash[l.Hash]; ok {
+					lr.Resolved, lr.RecordID = true, r.ID
+				}
+			}
+			rr.Links = append(rr.Links, lr)
+		}
+		out = append(out, rr)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Chain != out[j].Chain {
+			return out[i].Chain < out[j].Chain
+		}
+		return out[i].Seq < out[j].Seq
+	})
+	return out
 }
 
 func committed(s string) bool {
