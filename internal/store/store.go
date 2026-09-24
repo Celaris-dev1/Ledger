@@ -96,6 +96,9 @@ func (r *AppendRequest) Validate() error {
 	if _, err := canon.Normalize(r.Payload); err != nil {
 		return &ValidationError{"payload must be valid JSON"}
 	}
+	if err := CheckDuplicateKeys(r.Payload); err != nil {
+		return &ValidationError{"payload: " + err.Error()}
+	}
 	return nil
 }
 
@@ -272,6 +275,9 @@ func (s *Store) Append(ctx context.Context, req AppendRequest) (*Record, error) 
 	if len(existing) > 0 {
 		if err := tx.Commit(ctx); err != nil {
 			return nil, err
+		}
+		if !sameRequest(&existing[0], &req, acCanon, plCanon) {
+			return nil, &ConflictError{"idempotency_key already used on this chain for a different record (type, goal_id, actor_chain, policy_version or payload differ)"}
 		}
 		return &existing[0], nil
 	}

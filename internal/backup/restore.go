@@ -16,6 +16,7 @@ import (
 
 	"github.com/Celaris-dev1/Ledger/internal/anchor"
 	"github.com/Celaris-dev1/Ledger/internal/anchoring"
+	"github.com/Celaris-dev1/Ledger/internal/canon"
 	"github.com/Celaris-dev1/Ledger/internal/store"
 )
 
@@ -231,6 +232,15 @@ func Restore(ctx context.Context, st *store.Store, dir string, opt VerifyOptions
 			return nil, err
 		}
 		for _, r := range L.Chains[c.Name] {
+			// Store exactly the canonical text the hash covers: a crafted backup could otherwise
+			// carry equivalent-but-different JSON (duplicate keys, whitespace) that verifies yet
+			// reads differently. Canonicalising cannot change any hash.
+			ac, err1 := canon.CanonicalBytes(r.ActorChain)
+			pl, err2 := canon.CanonicalBytes(r.Payload)
+			if err := errors.Join(err1, err2); err != nil {
+				return nil, fmt.Errorf("record %s/%d: %w", r.Chain, r.Seq, err)
+			}
+			r.ActorChain, r.Payload = ac, pl
 			if _, err := tx.Exec(ctx, `INSERT INTO records(id,chain,seq,type,goal_id,actor_chain,policy_version,payload,created_at,prev_hash,hash,idempotency_key)
 				VALUES ($1,$2,$3,$4,NULLIF($5,''),$6,NULLIF($7,''),$8,$9,$10,$11,NULLIF($12,''))`,
 				r.ID, r.Chain, r.Seq, r.Type, r.GoalID, string(r.ActorChain), r.PolicyVersion, string(r.Payload), r.CreatedAt, r.PrevHash, r.Hash, r.IdempotencyKey); err != nil {

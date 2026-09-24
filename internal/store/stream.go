@@ -27,12 +27,12 @@ func (s *Store) ChainBatch(ctx context.Context, chain string, afterSeq int64, li
 
 // hashAll recomputes record hashes in parallel (each hash depends only on the record and
 // its stored prev_hash; linkage is checked sequentially afterwards).
-func hashAll(recs []Record, workers int) ([]string, []error) {
+func hashAll(recs []Record, workers int, strict bool) ([]string, []error) {
 	hs := make([]string, len(recs))
 	errs := make([]error, len(recs))
 	if workers <= 1 || len(recs) < 256 {
 		for i := range recs {
-			hs[i], errs[i] = ComputeHash(&recs[i])
+			hs[i], errs[i] = hashStrict(&recs[i], strict)
 		}
 		return hs, errs
 	}
@@ -50,7 +50,7 @@ func hashAll(recs []Record, workers int) ([]string, []error) {
 		go func(lo, hi int) {
 			defer wg.Done()
 			for i := lo; i < hi; i++ {
-				hs[i], errs[i] = ComputeHash(&recs[i])
+				hs[i], errs[i] = hashStrict(&recs[i], strict)
 			}
 		}(lo, hi)
 	}
@@ -63,8 +63,11 @@ func hashAll(recs []Record, workers int) ([]string, []error) {
 type Verifier struct {
 	Res     VerifyResult
 	Workers int
-	prev    string
-	n       int64
+	// Strict also requires each record's stored actor_chain/payload text to be canonical
+	// (CheckCanonical). VerifyStream (the database path) sets it.
+	Strict bool
+	prev   string
+	n      int64
 }
 
 // NewVerifier starts verifying chain.
@@ -77,7 +80,7 @@ func (v *Verifier) Feed(recs []Record) bool {
 	if !v.Res.OK {
 		return false
 	}
-	hs, errs := hashAll(recs, v.Workers)
+	hs, errs := hashAll(recs, v.Workers, v.Strict)
 	for i := range recs {
 		r := &recs[i]
 		v.n++
@@ -94,7 +97,7 @@ func (v *Verifier) Feed(recs []Record) bool {
 			return fail("prev_hash does not match previous record hash")
 		}
 		if errs[i] != nil {
-			return fail("undecodable record: " + errs[i].Error())
+			return fail(verifyReason(errs[i]))
 		}
 		if hs[i] != r.Hash {
 			return fail("stored hash does not match recomputed hash (record content altered)")
@@ -112,6 +115,7 @@ func (s *Store) VerifyStream(ctx context.Context, chain string, batch int) (Veri
 		batch = VerifyBatchSize
 	}
 	v := NewVerifier(chain)
+	v.Strict = true // database rows must hold exactly the canonical text that was hashed
 	// Prefetch: the next page is read from Postgres while the current one is hashed.
 	type page struct {
 		recs []Record

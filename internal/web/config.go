@@ -15,7 +15,11 @@ type EnvConfig struct {
 	AuthMode   string        // LEDGER_AUTH: "" (auto) | on | off
 	Auth       auth.Config   // LEDGER_TOKEN, LEDGER_TOKEN_ROLE, LEDGER_OIDC_*, LEDGER_SESSION_TTL, LEDGER_SECURE_COOKIES
 	StreamPoll time.Duration // LEDGER_STREAM_POLL (default 2s)
-	Warnings   []string
+	// Tenancy is set when LEDGER_TOKENS configures multi-tenancy. Open mode is then refused:
+	// tenant tokens only authenticate the tenant-scoped API routes, so an open UI and
+	// /v1/stream would hand every tenant's records (and /admin) to anonymous callers.
+	Tenancy  bool
+	Warnings []string
 }
 
 func csv(s string) []string {
@@ -30,7 +34,8 @@ func csv(s string) []string {
 
 // ConfigFromEnv parses the UI/auth environment variables.
 func ConfigFromEnv(getenv func(string) string) (EnvConfig, error) {
-	c := EnvConfig{UIEnabled: getenv("LEDGER_UI") != "off", AuthMode: strings.ToLower(getenv("LEDGER_AUTH")), StreamPoll: 2 * time.Second}
+	c := EnvConfig{UIEnabled: getenv("LEDGER_UI") != "off", AuthMode: strings.ToLower(getenv("LEDGER_AUTH")), StreamPoll: 2 * time.Second,
+		Tenancy: strings.TrimSpace(getenv("LEDGER_TOKENS")) != ""}
 	switch c.AuthMode {
 	case "", "auto", "on", "off":
 	default:
@@ -96,8 +101,14 @@ func ConfigFromEnv(getenv func(string) string) (EnvConfig, error) {
 func (c *EnvConfig) ResolveOpen(ctx context.Context, st auth.Store) (bool, error) {
 	switch c.AuthMode {
 	case "off":
+		if c.Tenancy {
+			return false, fmt.Errorf("LEDGER_AUTH=off cannot be combined with LEDGER_TOKENS (multi-tenancy): open mode would expose every tenant through the UI and /v1/stream")
+		}
 		return true, nil
 	case "on":
+		return false, nil
+	}
+	if c.Tenancy {
 		return false, nil
 	}
 	if c.Auth.LegacyToken != "" || c.Auth.OIDC != nil {

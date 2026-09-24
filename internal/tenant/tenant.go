@@ -58,7 +58,16 @@ func Logical(chain string) string {
 	return chain
 }
 
-func strip(recs []store.Record) []store.Record {
+func (s *Scoped) strip(recs []store.Record) []store.Record {
+	// Defense in depth: the tenant column is derived, not hashed; only return rows whose hashed
+	// chain name belongs to this tenant, even if the column was altered.
+	kept := recs[:0]
+	for _, r := range recs {
+		if store.TenantOfChain(r.Chain) == s.Tenant {
+			kept = append(kept, r)
+		}
+	}
+	recs = kept
 	for i := range recs {
 		recs[i].Chain = Logical(recs[i].Chain)
 	}
@@ -87,12 +96,12 @@ func (s *Scoped) List(ctx context.Context, q store.Query) ([]store.Record, error
 		q.Chain = p
 	}
 	recs, err := s.St.ListTenant(ctx, s.Tenant, q)
-	return strip(recs), err
+	return s.strip(recs), err
 }
 
 func (s *Scoped) Replay(ctx context.Context, goalID string) ([]store.Record, error) {
 	recs, err := s.St.ReplayTenant(ctx, s.Tenant, goalID)
-	return strip(recs), err
+	return s.strip(recs), err
 }
 
 func (s *Scoped) Verify(ctx context.Context, chain string) (store.VerifyResult, error) {
@@ -119,7 +128,7 @@ func (s *Scoped) ChainRecords(ctx context.Context, chain string) ([]store.Record
 		return []store.Record{}, nil
 	}
 	recs, err := s.St.ChainRecords(ctx, p)
-	return strip(recs), err
+	return s.strip(recs), err
 }
 
 // Chains lists the tenant's logical chain names.

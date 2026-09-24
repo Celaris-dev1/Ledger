@@ -42,7 +42,7 @@ import urllib.request
 import uuid
 from typing import Any, Dict, List, Optional
 
-from ._spool import Spool
+from ._spool import Spool, private_dir
 
 __all__ = ["Ledger", "LedgerError"]
 
@@ -56,7 +56,20 @@ class LedgerError(RuntimeError):
 
 def _default_spool_path(chain: str, url: str) -> str:
     key = hashlib.sha256(f"{url}|{chain}".encode()).hexdigest()[:16]
-    return os.path.join(tempfile.gettempdir(), f"ledger-sdk-spool-{key}.jsonl")
+    name = f"ledger-sdk-spool-{key}.jsonl"
+    new = os.path.join(private_dir(tempfile.gettempdir()), name)
+    # Migrate a spool left by an older SDK directly in the shared temp dir, but only if it is
+    # a regular file we own that nobody else can write (otherwise it may be planted).
+    legacy = os.path.join(tempfile.gettempdir(), name)
+    try:
+        st = os.lstat(legacy)
+        import stat as _stat
+        if (not os.path.exists(new) and _stat.S_ISREG(st.st_mode) and not st.st_mode & 0o022
+                and (not hasattr(os, "getuid") or st.st_uid == os.getuid())):
+            os.rename(legacy, new)
+    except OSError:
+        pass
+    return new
 
 
 class Ledger:

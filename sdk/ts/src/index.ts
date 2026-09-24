@@ -22,9 +22,10 @@
  * supplied) so retries never double-append.
  */
 import * as crypto from "node:crypto";
+import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { Spool } from "./spool.js";
+import { Spool, privateDir } from "./spool.js";
 
 export type ActorKind = "human" | "agent" | "service";
 export interface Actor {
@@ -89,7 +90,19 @@ interface QueuedBody {
 
 function defaultSpoolPath(chain: string, url: string): string {
   const key = crypto.createHash("sha256").update(`${url}|${chain}`).digest("hex").slice(0, 16);
-  return path.join(os.tmpdir(), `ledger-sdk-spool-${key}.jsonl`);
+  const name = `ledger-sdk-spool-${key}.jsonl`;
+  const next = path.join(privateDir(os.tmpdir()), name);
+  // Migrate a spool left by an older SDK directly in the shared temp dir, but only a regular
+  // file we own that nobody else can write (otherwise it may have been planted).
+  const legacy = path.join(os.tmpdir(), name);
+  try {
+    const st = fs.lstatSync(legacy);
+    const mine = typeof process.getuid !== "function" || st.uid === process.getuid();
+    if (!fs.existsSync(next) && st.isFile() && mine && (st.mode & 0o022) === 0) fs.renameSync(legacy, next);
+  } catch {
+    /* no legacy spool */
+  }
+  return next;
 }
 
 export class Ledger {

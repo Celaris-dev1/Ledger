@@ -200,6 +200,11 @@ func (s *Server) postRecord(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, ve.Msg)
 		return
 	}
+	var ce *store.ConflictError
+	if errors.As(err, &ce) {
+		writeErr(w, http.StatusConflict, ce.Msg)
+		return
+	}
 	if err != nil {
 		s.internal(w, err)
 		return
