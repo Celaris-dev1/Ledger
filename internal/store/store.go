@@ -287,7 +287,7 @@ func (s *Store) Append(ctx context.Context, req AppendRequest) (*Record, error) 
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck
 	b1 := &pgx.Batch{}
-	b1.Queue(`SELECT pg_advisory_xact_lock(8410, hashtext($1))`, req.Chain)
+	b1.Queue(`SELECT pg_advisory_xact_lock(hashtextextended(current_schema() || '/ledger-chain/' || $1, 0))`, req.Chain)
 	b1.Queue(`INSERT INTO chains(name) VALUES ($1) ON CONFLICT DO NOTHING`, req.Chain)
 	if req.IdempotencyKey != "" {
 		b1.Queue(selectColsWithKey+` WHERE chain=$1 AND idempotency_key=$2`, req.Chain, req.IdempotencyKey)

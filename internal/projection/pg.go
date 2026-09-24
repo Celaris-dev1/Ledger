@@ -21,7 +21,9 @@ type PG struct {
 	Batch int // records per transaction (default 500)
 }
 
-const lockKey = 200 // pg_advisory_xact_lock(8410, 200) serialises projector transactions
+// projLock serialises projector transactions. It is scoped to the current schema so
+// separate Ledger deployments (or test schemas) sharing one database never contend.
+const projLock = `SELECT pg_advisory_xact_lock(hashtextextended(current_schema() || '/ledger-projection', 0))`
 
 // Stats describes one catch-up run.
 type Stats struct {
@@ -56,7 +58,7 @@ func (p *PG) Rebuild(ctx context.Context) (Stats, error) {
 		return Stats{}, err
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck
-	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(8410, $1)`, lockKey); err != nil {
+	if _, err := tx.Exec(ctx, projLock); err != nil {
 		return Stats{}, err
 	}
 	// Goals, operators and tools are upserted with every projected column, so they are
@@ -145,7 +147,7 @@ func (p *PG) step(ctx context.Context, chain string, st *Stats) (int, error) {
 		return 0, err
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck
-	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(8410, $1)`, lockKey); err != nil {
+	if _, err := tx.Exec(ctx, projLock); err != nil {
 		return 0, err
 	}
 	var cur int64
