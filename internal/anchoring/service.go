@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Celaris-dev1/Ledger/internal/anchor"
@@ -34,6 +35,8 @@ type Service struct {
 	Quorum   int      // RFC 3161 quorum (for reporting)
 	RootDirs []string // external anchor directories scanned by VerifyAll (file backend dir, git clone roots/)
 	Log      *log.Logger
+	// keyMu guards Key and the Keyring's state: RotateKey may run while the scheduler signs.
+	keyMu sync.RWMutex
 }
 
 func (s *Service) logf(f string, a ...any) {
@@ -115,7 +118,10 @@ func (s *Service) AnchorChain(ctx context.Context, chain string) (Result, error)
 	if v.Length == 0 {
 		return res, errors.New("chain is empty")
 	}
-	root := anchor.Sign(s.Key, chain, res.Seq, res.Head)
+	s.keyMu.RLock()
+	key := s.Key
+	s.keyMu.RUnlock()
+	root := anchor.Sign(key, chain, res.Seq, res.Head)
 	res.KeyID = root.KeyID
 	if err := s.Store.SaveAnchor(ctx, chain, root.Seq, root.Head, root.Signature, root.PublicKey); err != nil {
 		return res, err
@@ -171,9 +177,11 @@ func (s *Service) Trust(ctx context.Context) (anchor.TrustSet, []string, error) 
 		return nil, nil, nil
 	}
 	base := anchor.TrustSet{}
+	s.keyMu.RLock()
 	for id, pub := range s.Keyring.Public {
 		base[id] = pub
 	}
+	s.keyMu.RUnlock()
 	rots, err := s.Rotations(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -191,11 +199,15 @@ func (s *Service) RotateKey(ctx context.Context, operator string, keepOld bool) 
 	if s.Keyring == nil {
 		return anchor.Rotation{}, nil, errors.New("key rotation requires LEDGER_KEYRING_DIR")
 	}
+	s.keyMu.Lock()
 	rot, err := s.Keyring.Rotate(keepOld)
+	if err == nil {
+		s.Key = s.Keyring.Active
+	}
+	s.keyMu.Unlock()
 	if err != nil {
 		return rot, nil, err
 	}
-	s.Key = s.Keyring.Active
 	pl, _ := json.Marshal(rot)
 	if operator == "" {
 		operator = "operator"

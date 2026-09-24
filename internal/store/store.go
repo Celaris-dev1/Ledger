@@ -199,11 +199,19 @@ func (s *Store) Close() { s.Pool.Close() }
 
 // Migrate applies embedded migrations in lexical order, once each.
 func (s *Store) Migrate(ctx context.Context) error {
-	if _, err := s.Pool.Exec(ctx, `SELECT pg_advisory_lock(8410001)`); err != nil {
+	// The advisory lock is session-scoped: take it, migrate and release it on ONE connection.
+	// (Through the pool, the unlock could run on a different connection than the lock and
+	// leave it held by an idle pooled connection, blocking every later migration.)
+	conn, err := s.Pool.Acquire(ctx)
+	if err != nil {
 		return err
 	}
-	defer s.Pool.Exec(context.Background(), `SELECT pg_advisory_unlock(8410001)`) //nolint:errcheck
-	if _, err := s.Pool.Exec(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`); err != nil {
+	defer conn.Release()
+	if _, err := conn.Exec(ctx, `SELECT pg_advisory_lock(8410001)`); err != nil {
+		return err
+	}
+	defer conn.Exec(context.Background(), `SELECT pg_advisory_unlock(8410001)`) //nolint:errcheck
+	if _, err := conn.Exec(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`); err != nil {
 		return err
 	}
 	entries, err := migrationFS.ReadDir("migrations")
@@ -217,14 +225,14 @@ func (s *Store) Migrate(ctx context.Context) error {
 	sort.Strings(names)
 	for _, n := range names {
 		var exists bool
-		if err := s.Pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE name=$1)`, n).Scan(&exists); err != nil {
+		if err := conn.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE name=$1)`, n).Scan(&exists); err != nil {
 			return err
 		}
 		if exists {
 			continue
 		}
 		sqlb, _ := migrationFS.ReadFile("migrations/" + n)
-		tx, err := s.Pool.Begin(ctx)
+		tx, err := conn.Begin(ctx)
 		if err != nil {
 			return err
 		}
