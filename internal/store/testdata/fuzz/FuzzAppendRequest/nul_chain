@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("{\"chain\":\"c\\u0000\",\"type\":\"t\",\"actor_chain\":[{\"kind\":\"human\",\"id\":\"a\"}]}")

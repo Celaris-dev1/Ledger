@@ -23,7 +23,7 @@ func WriteJSON(w io.Writer, r Report) error {
 }
 
 var htmlTmpl = template.Must(template.New("r").Funcs(template.FuncMap{
-	"raw":   func(b json.RawMessage) string { return string(b) },
+	"raw":   canonText,
 	"upper": strings.ToUpper,
 	"date": func(t time.Time) string {
 		if t.IsZero() {
@@ -344,6 +344,15 @@ func orDash(s string) string {
 		return "—"
 	}
 	return s
+}
+
+// canonText renders embedded JSON canonically, so a report rendered from its JSON round trip
+// (json.Marshal HTML-escapes raw messages: "<" becomes <) prints the same text.
+func canonText(b json.RawMessage) string {
+	if c, err := canon.CanonicalBytes(b); err == nil {
+		return string(c)
+	}
+	return string(b)
 }
 
 func fmtT(t time.Time) string {

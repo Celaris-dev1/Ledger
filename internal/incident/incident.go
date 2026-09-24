@@ -171,6 +171,20 @@ func refsOf(v any, out map[ref]bool) {
 	}
 }
 
+func sortedRefs(m map[ref]bool) []ref {
+	out := make([]ref, 0, len(m))
+	for r := range m {
+		out = append(out, r)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].class != out[j].class {
+			return out[i].class < out[j].class
+		}
+		return out[i].value < out[j].value
+	})
+	return out
+}
+
 type item struct {
 	rec     store.Record
 	p       map[string]any
@@ -217,7 +231,8 @@ func Build(ctx context.Context, src Source, goalID string) (*Report, error) {
 			if it.include {
 				continue
 			}
-			for rf := range it.refs {
+			// sorted, so linked_by does not depend on map iteration order
+			for _, rf := range sortedRefs(it.refs) {
 				if known[rf] {
 					it.include, it.linked, changed = true, rf.class+"="+rf.value, true
 					break

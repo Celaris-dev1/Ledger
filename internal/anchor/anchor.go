@@ -110,6 +110,12 @@ func RootKeyID(r Root) string {
 
 // VerifyRoot checks a Root's signature against its embedded public key (Ed25519 or ECDSA P-256).
 func VerifyRoot(r Root) bool {
+	// Message joins fields with "\n"; seq is decimal, so it is injective as long as the last
+	// field (head) has no newline. Without this, the root signed for chain "a\n1" seq 2 head
+	// "h" also verified as chain "a" seq 1 head "2\nh".
+	if strings.ContainsAny(r.Head, "\n") {
+		return false
+	}
 	pub, err := base64.StdEncoding.DecodeString(r.PublicKey)
 	if err != nil {
 		return false

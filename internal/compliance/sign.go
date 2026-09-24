@@ -75,6 +75,9 @@ func Verify(r Report, trust anchor.TrustSet) error {
 	return nil
 }
 
+// MaxEmbeddedReport caps the inflated size of the report embedded in a pack PDF.
+const MaxEmbeddedReport = 256 << 20
+
 // VerifyPDF verifies a pack PDF: the embedded report must verify (Verify), and the PDF itself
 // must be exactly what RenderPDF produces for that report. Without the second check the pages
 // an auditor reads (and the metadata) could be edited freely while the untouched embedded
@@ -105,19 +108,24 @@ func ExtractFromPDF(pdf []byte) (Report, error) {
 	if m == nil {
 		return Report{}, errors.New("no embedded report in PDF")
 	}
-	n, _ := strconv.Atoi(string(pdf[m[2]:m[3]]))
+	n, err := strconv.Atoi(string(pdf[m[2]:m[3]]))
 	rest := pdf[m[1]:]
 	i := bytes.Index(rest, []byte("stream\n"))
-	if i < 0 || i+7+n > len(rest) {
+	// n is compared without adding (a huge /Length used to overflow i+7+n and panic)
+	if err != nil || i < 0 || n < 0 || n > len(rest)-i-7 {
 		return Report{}, errors.New("malformed embedded file stream")
 	}
 	zr, err := zlib.NewReader(bytes.NewReader(rest[i+7 : i+7+n]))
 	if err != nil {
 		return Report{}, err
 	}
-	raw, err := io.ReadAll(io.LimitReader(zr, 1<<30))
+	// bounded inflate: a small crafted stream could otherwise expand to 1 GiB in memory
+	raw, err := io.ReadAll(io.LimitReader(zr, MaxEmbeddedReport+1))
 	if err != nil {
 		return Report{}, err
+	}
+	if len(raw) > MaxEmbeddedReport {
+		return Report{}, fmt.Errorf("embedded report larger than %d bytes", MaxEmbeddedReport)
 	}
 	var r Report
 	if err := json.Unmarshal(raw, &r); err != nil {

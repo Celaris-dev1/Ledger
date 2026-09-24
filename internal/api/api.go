@@ -7,6 +7,8 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"strconv"
@@ -57,6 +59,8 @@ type Server struct {
 	DataKeys keys.DataKeyStore
 	// Signer, if set, signs roots instead of Key (Vault Transit / AWS KMS / file).
 	Signer keys.Signer
+	// Limits caps request cost (body size, page size, export size, per-request timeout).
+	Limits Limits
 }
 
 // AnchorSource lists (and optionally re-verifies) external anchor receipts of a chain.
@@ -89,7 +93,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/goals/{goal_id}/replay", s.guard(auth.PermRead, s.replay))
 	mux.HandleFunc("GET /v1/export", s.guard(auth.PermExport, s.export))
 	s.registerProjections(mux)
-	return mux
+	return s.withTimeout(mux)
 }
 
 // guard authenticates a route. With multi-tenancy on, a tenant bearer token takes the tenant
@@ -165,13 +169,29 @@ func (s *Server) internal(w http.ResponseWriter, err error) {
 
 func (s *Server) postRecord(w http.ResponseWriter, r *http.Request) {
 	var req store.AppendRequest
-	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<20))
-	if err := dec.Decode(&req); err != nil {
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, s.maxBody()))
+	err := dec.Decode(&req)
+	if err == nil {
+		if _, e := dec.Token(); e != io.EOF {
+			if err = e; e == nil || !errors.As(e, new(*http.MaxBytesError)) {
+				err = errors.New("trailing data after the JSON object")
+			}
+		}
+	}
+	var mbe *http.MaxBytesError
+	if errors.As(err, &mbe) {
+		writeErr(w, http.StatusRequestEntityTooLarge, fmt.Sprintf("request body larger than %d bytes (LEDGER_MAX_BODY_BYTES)", mbe.Limit))
+		return
+	}
+	if err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid JSON body: "+err.Error())
 		return
 	}
 	be, ok := s.backend(w, r)
 	if !ok {
+		return
+	}
+	if reservedAppend(w, be, req.Chain, req.Type) {
 		return
 	}
 	if req.DataSubject != "" {
@@ -316,6 +336,10 @@ func (s *Server) replay(w http.ResponseWriter, r *http.Request) {
 		s.internal(w, err)
 		return
 	}
+	if len(recs) > s.maxExport() {
+		tooLarge(w, len(recs), s.maxExport(), "goal "+goal)
+		return
+	}
 	writeJSON(w, 200, map[string]any{"goal_id": goal, "records": recs})
 }
 
@@ -324,6 +348,18 @@ func (s *Server) export(w http.ResponseWriter, r *http.Request) {
 	be, ok := s.backend(w, r)
 	if !ok {
 		return
+	}
+	total := 0
+	for _, c := range r.URL.Query()["chain"] {
+		n, _, err := be.Head(r.Context(), c)
+		if err != nil {
+			s.internal(w, err)
+			return
+		}
+		if total += int(n); r.URL.Query().Get("goal_id") == "" && total > s.maxExport() {
+			tooLarge(w, total, s.maxExport(), "this export")
+			return
+		}
 	}
 	p, err := BuildPack(r.Context(), be, s.Key, r.URL.Query()["chain"], r.URL.Query().Get("goal_id"))
 	if err != nil {

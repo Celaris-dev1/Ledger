@@ -352,7 +352,36 @@ func Map(rec store.Record) (ops []Op, mapped bool) {
 	dec.UseNumber()
 	var out []Op
 	_ = dec.Decode(&out)
+	// Postgres text/jsonb columns cannot hold U+0000, which a stored payload may contain; left
+	// in, one such record failed every projector run on its chain. Replace it with U+FFFD.
+	for i := range out {
+		out[i].Group, out[i].Key, out[i].GoalID = noNUL(out[i].Group), noNUL(out[i].Key), noNUL(out[i].GoalID)
+		if out[i].F != nil {
+			out[i].F = scrubNUL(out[i].F).(map[string]any)
+		}
+	}
 	return out, mapped
+}
+
+func noNUL(s string) string { return strings.ReplaceAll(s, "\x00", "\uFFFD") }
+
+func scrubNUL(v any) any {
+	switch t := v.(type) {
+	case string:
+		return noNUL(t)
+	case []any:
+		for i := range t {
+			t[i] = scrubNUL(t[i])
+		}
+		return t
+	case map[string]any:
+		out := make(map[string]any, len(t))
+		for k, x := range t {
+			out[noNUL(k)] = scrubNUL(x)
+		}
+		return out
+	}
+	return v
 }
 
 func (m *mapper) mapType() bool {

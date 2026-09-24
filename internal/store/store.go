@@ -61,6 +61,14 @@ type Record struct {
 	IdempotencyKey string          `json:"idempotency_key,omitempty"`
 }
 
+// Input limits. Names are indexed (a btree entry holds at most ~2.7kB), so they are capped well
+// below that; the caps are generous for real chain/goal/key names.
+const (
+	MaxNameLen = 512 // chain, goal_id, idempotency_key, actor id/model/model_version
+	MaxTypeLen = 256 // type, policy_version
+	MaxActors  = 64  // delegation hops in actor_chain
+)
+
 // ValidationError marks a client error.
 type ValidationError struct{ Msg string }
 
@@ -71,11 +79,26 @@ func (r *AppendRequest) Validate() error {
 	if strings.TrimSpace(r.Chain) == "" {
 		return &ValidationError{"chain is required"}
 	}
+	if strings.ContainsFunc(r.Chain, func(c rune) bool { return c < 0x20 || c == 0x7f }) {
+		return &ValidationError{"chain must not contain control characters"}
+	}
 	if strings.TrimSpace(r.Type) == "" {
 		return &ValidationError{"type is required"}
 	}
+	for _, f := range []struct {
+		name, v string
+		max     int
+	}{{"chain", r.Chain, MaxNameLen}, {"type", r.Type, MaxTypeLen}, {"goal_id", r.GoalID, MaxNameLen},
+		{"policy_version", r.PolicyVersion, MaxTypeLen}, {"idempotency_key", r.IdempotencyKey, MaxNameLen}} {
+		if err := checkText(f.name, f.v, f.max); err != nil {
+			return err
+		}
+	}
 	if len(r.ActorChain) == 0 {
 		return &ValidationError{"actor_chain must be non-empty"}
+	}
+	if len(r.ActorChain) > MaxActors {
+		return &ValidationError{fmt.Sprintf("actor_chain has more than %d entries", MaxActors)}
 	}
 	if r.ActorChain[0].Kind != "human" {
 		return &ValidationError{"actor_chain[0].kind must be \"human\" (originating human is never dropped)"}
@@ -89,15 +112,35 @@ func (r *AppendRequest) Validate() error {
 		if a.ID == "" {
 			return &ValidationError{fmt.Sprintf("actor_chain[%d].id is required", i)}
 		}
+		for k, v := range map[string]string{"id": a.ID, "model": a.Model, "model_version": a.ModelVersion} {
+			if err := checkText(fmt.Sprintf("actor_chain[%d].%s", i, k), v, MaxNameLen); err != nil {
+				return err
+			}
+		}
 	}
 	if len(r.Payload) == 0 || string(r.Payload) == "null" {
 		r.Payload = json.RawMessage(`{}`)
 	}
-	if _, err := canon.Normalize(r.Payload); err != nil {
+	pl, err := canon.Normalize(r.Payload)
+	if err != nil {
 		return &ValidationError{"payload must be valid JSON"}
 	}
 	if err := CheckDuplicateKeys(r.Payload); err != nil {
 		return &ValidationError{"payload: " + err.Error()}
+	}
+	if _, ok := pl.(map[string]any); !ok {
+		return &ValidationError{"payload must be a JSON object"}
+	}
+	return nil
+}
+
+// checkText rejects strings Postgres text columns cannot hold (NUL) and oversized names.
+func checkText(field, v string, max int) error {
+	if len(v) > max {
+		return &ValidationError{fmt.Sprintf("%s is longer than %d bytes", field, max)}
+	}
+	if strings.IndexByte(v, 0) >= 0 {
+		return &ValidationError{field + " must not contain NUL characters"}
 	}
 	return nil
 }
@@ -159,11 +202,19 @@ func (s *Store) Close() { s.Pool.Close() }
 
 // Migrate applies embedded migrations in lexical order, once each.
 func (s *Store) Migrate(ctx context.Context) error {
-	if _, err := s.Pool.Exec(ctx, `SELECT pg_advisory_lock(8410001)`); err != nil {
+	// The advisory lock is session-scoped: take it, migrate and release it on ONE connection.
+	// (Through the pool, the unlock could run on a different connection than the lock and
+	// leave it held by an idle pooled connection, blocking every later migration.)
+	conn, err := s.Pool.Acquire(ctx)
+	if err != nil {
 		return err
 	}
-	defer s.Pool.Exec(context.Background(), `SELECT pg_advisory_unlock(8410001)`) //nolint:errcheck
-	if _, err := s.Pool.Exec(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`); err != nil {
+	defer conn.Release()
+	if _, err := conn.Exec(ctx, `SELECT pg_advisory_lock(8410001)`); err != nil {
+		return err
+	}
+	defer conn.Exec(context.Background(), `SELECT pg_advisory_unlock(8410001)`) //nolint:errcheck
+	if _, err := conn.Exec(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`); err != nil {
 		return err
 	}
 	entries, err := migrationFS.ReadDir("migrations")
@@ -177,14 +228,14 @@ func (s *Store) Migrate(ctx context.Context) error {
 	sort.Strings(names)
 	for _, n := range names {
 		var exists bool
-		if err := s.Pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE name=$1)`, n).Scan(&exists); err != nil {
+		if err := conn.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE name=$1)`, n).Scan(&exists); err != nil {
 			return err
 		}
 		if exists {
 			continue
 		}
 		sqlb, _ := migrationFS.ReadFile("migrations/" + n)
-		tx, err := s.Pool.Begin(ctx)
+		tx, err := conn.Begin(ctx)
 		if err != nil {
 			return err
 		}

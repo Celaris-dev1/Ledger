@@ -78,3 +78,32 @@ jobs:
         with: { node-version: "22" }
       - run: npm ci && npm test
         working-directory: sdk/ts
+
+  hardening:
+    # Every native fuzz target for 10s (seed corpora in */testdata/fuzz also run in the go job
+    # as plain tests), plus the concurrency suite under -race with repetition.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ledger
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 2s --health-retries 20
+    env:
+      LEDGER_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/ledger?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version: "1.24" }
+      - uses: actions/setup-node@v4
+        with: { node-version: "22" }
+      - name: fuzz (10s per target)
+        run: bash .github/fuzz.sh 10s
+      - name: concurrency under -race (x2)
+        run: go test -race -count=2 -run 'Concurrency|Concurrent' ./...
+      - name: browser canon.js differential (node)
+        run: go test -run 'TestBrowserCanon' -v ./internal/web

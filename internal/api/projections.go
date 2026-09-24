@@ -45,7 +45,12 @@ func (s *Server) listGoals(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	writeJSON(w, 200, map[string]any{"goals": projection.Goals(rows)})
+	after, limit, ok := s.pageParams(w, r)
+	if !ok {
+		return
+	}
+	goals, next := page(projection.Goals(rows), func(g projection.GoalSummary) string { return g.ID }, after, limit)
+	writeJSON(w, 200, map[string]any{"goals": goals, "next_after": next})
 }
 
 func (s *Server) goalTree(w http.ResponseWriter, r *http.Request) {
@@ -70,11 +75,16 @@ func (s *Server) approvals(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, "status must be pending, approved or denied")
 		return
 	}
+	after, limit, ok := s.pageParams(w, r)
+	if !ok {
+		return
+	}
 	rows, ok := s.rows(w, r, "")
 	if !ok {
 		return
 	}
-	writeJSON(w, 200, map[string]any{"approvals": projection.Approvals(rows, status)})
+	list, next := page(projection.Approvals(rows, status), func(a projection.ApprovalNode) string { return a.ID }, after, limit)
+	writeJSON(w, 200, map[string]any{"approvals": list, "next_after": next})
 }
 
 func (s *Server) budgets(w http.ResponseWriter, r *http.Request) {
