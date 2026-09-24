@@ -167,16 +167,16 @@ func runRegimeExport(ctx context.Context, args []string) {
 			die("%v", err)
 		}
 		var r compliance.Report
+		trust := trustSet(ctx)
 		if strings.HasPrefix(string(b), "%PDF") {
-			r, err = compliance.ExtractFromPDF(b)
+			// The whole PDF, not just its embedded report, must match the signature.
+			r, err = compliance.VerifyPDF(b, trust)
+		} else if err = json.Unmarshal(b, &r); err != nil {
+			die("%v", err)
 		} else {
-			err = json.Unmarshal(b, &r)
+			err = compliance.Verify(r, trust)
 		}
 		if err != nil {
-			die("%v", err)
-		}
-		trust := trustSet(ctx)
-		if err := compliance.Verify(r, trust); err != nil {
 			fmt.Printf("INVALID  %s: %v\n", *verify, err)
 			os.Exit(1)
 		}

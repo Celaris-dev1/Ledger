@@ -75,6 +75,28 @@ func Verify(r Report, trust anchor.TrustSet) error {
 	return nil
 }
 
+// VerifyPDF verifies a pack PDF: the embedded report must verify (Verify), and the PDF itself
+// must be exactly what RenderPDF produces for that report. Without the second check the pages
+// an auditor reads (and the metadata) could be edited freely while the untouched embedded
+// attachment still verified. RenderPDF is deterministic, so a byte comparison is exact.
+func VerifyPDF(pdf []byte, trust anchor.TrustSet) (Report, error) {
+	r, err := ExtractFromPDF(pdf)
+	if err != nil {
+		return Report{}, err
+	}
+	if err := Verify(r, trust); err != nil {
+		return r, err
+	}
+	want, err := RenderPDF(r)
+	if err != nil {
+		return r, fmt.Errorf("re-rendering the signed report: %w", err)
+	}
+	if !bytes.Equal(want, pdf) {
+		return r, errors.New("PDF pages/metadata differ from the rendering of the signed embedded report (PDF altered, or rendered by a different Ledger version)")
+	}
+	return r, nil
+}
+
 var embedRe = regexp.MustCompile(`/Type /EmbeddedFile /Length (\d+) /Filter /FlateDecode`)
 
 // ExtractFromPDF returns the report.json embedded in a pack PDF (first embedded file).

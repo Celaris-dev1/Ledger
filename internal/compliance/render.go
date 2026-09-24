@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/go-pdf/fpdf"
+
+	"github.com/Celaris-dev1/Ledger/internal/canon"
 )
 
 // WriteJSON writes the report as indented JSON.
@@ -301,8 +303,8 @@ func RenderPDF(r Report) ([]byte, error) {
 	}
 	for _, rec := range r.Records[:n] {
 		mono(fmt.Sprintf("%s/%d %s %s goal=%s", rec.Chain, rec.Seq, rec.CreatedAt.UTC().Format(time.RFC3339), rec.Type, rec.GoalID))
-		mono("  actors " + trunc(string(rec.ActorChain), 150))
-		mono("  payload " + trunc(string(rec.Payload), 300))
+		mono("  actors " + trunc(displayJSON(rec.ActorChain), 150))
+		mono("  payload " + trunc(displayJSON(rec.Payload), 300))
 		mono("  hash " + rec.Hash)
 	}
 	var buf bytes.Buffer
@@ -310,6 +312,16 @@ func RenderPDF(r Report) ([]byte, error) {
 		return nil, err
 	}
 	return buf.Bytes(), nil
+}
+
+// displayJSON prints stored JSON in canonical form (the form the hash covers), so the PDF is
+// a pure function of the embedded report: the embedded report.json re-marshals raw payloads
+// (compacted, HTML-escaped) and VerifyPDF re-renders from it.
+func displayJSON(b json.RawMessage) string {
+	if c, err := canon.CanonicalBytes(b); err == nil {
+		return string(c)
+	}
+	return string(b)
 }
 
 func short(h string) string {
