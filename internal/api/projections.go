@@ -103,7 +103,11 @@ func (s *Server) incident(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	goal := r.PathValue("goal_id")
-	rep, err := incident.Build(r.Context(), src, goal)
+	var opts []incident.Option
+	if s.ReceiptKeys != nil {
+		opts = append(opts, incident.WithTrust(s.ReceiptKeys.Trust(r.Context(), tenantOf(r))))
+	}
+	rep, err := incident.Build(r.Context(), src, goal, opts...)
 	if err != nil {
 		s.internal(w, err)
 		return

@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"time"
 
 	"github.com/Celaris-dev1/Ledger/internal/anchor"
 	"github.com/Celaris-dev1/Ledger/internal/incident"
 	"github.com/Celaris-dev1/Ledger/internal/projection"
+	"github.com/Celaris-dev1/Ledger/internal/receiptkeys"
 	"github.com/Celaris-dev1/Ledger/internal/store"
 )
 
@@ -46,15 +48,22 @@ func runIncident(ctx context.Context, st *store.Store, goal, format, outFile str
 		die("incident requires --goal")
 	}
 	var opts []incident.Option
-	if keyring != nil {
-		opts = append(opts, incident.WithTrust(func(keyID string) (string, []byte, bool) {
-			pub, ok := keyring.Public[keyID]
-			if !ok {
-				return "", nil, false
+	// Default trust source: the enrolled receipt-key keyring (internal/receiptkeys). Enrolled
+	// and unrevoked -> trusted:true; revoked before the receipt's issued_at -> rejected; unknown
+	// -> trusted:false. Falls back to the local anchor keyring (LEDGER_KEYRING_DIR) for a key id
+	// it doesn't recognize, so an operator's own root-signing key chain still verifies.
+	rk := receiptkeys.Open(st.Pool)
+	opts = append(opts, incident.WithTrust(func(keyID string, issuedAt time.Time) (string, []byte, bool) {
+		if alg, pub, ok := rk.Trust(ctx, receiptkeys.DefaultTenant)(keyID, issuedAt); ok {
+			return alg, pub, true
+		}
+		if keyring != nil {
+			if pub, ok := keyring.Public[keyID]; ok {
+				return "ed25519", []byte(pub), true
 			}
-			return "ed25519", []byte(pub), true
-		}))
-	}
+		}
+		return "", nil, false
+	}))
 	rep, err := incident.Build(ctx, st, goal, opts...)
 	if err != nil {
 		die("incident: %v", err)

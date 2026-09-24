@@ -21,8 +21,11 @@ import (
 )
 
 // TrustFunc resolves a stack-receipt's signer_key_id to the public key and algorithm to verify
-// it against (e.g. backed by an anchor.Keyring). ok=false means the key id is not trusted/known.
-type TrustFunc func(keyID string) (alg string, pub []byte, ok bool)
+// it against (e.g. backed by the enrolled receipt-key store, internal/receiptkeys). issuedAt is
+// the receipt's own issued_at, so a revocation-aware trust store can reject a receipt issued
+// after its key was revoked while still trusting ones issued before. ok=false means the key id
+// is not trusted/known (unenrolled, or revoked as of issuedAt).
+type TrustFunc func(keyID string, issuedAt time.Time) (alg string, pub []byte, ok bool)
 
 // Option configures Build.
 type Option func(*buildConfig)
@@ -462,8 +465,8 @@ func collectReceipts(sel []*item, trust TrustFunc) []ReceiptResult {
 		}
 		if trust == nil {
 			rr.Detail = "no trust store configured; signature not checked"
-		} else if alg, pub, ok := trust(env.SignerKeyID); !ok {
-			rr.Detail = "signer_key_id not in trust store"
+		} else if alg, pub, ok := trust(env.SignerKeyID, env.IssuedAt); !ok {
+			rr.Detail = "signer_key_id not in trust store (unknown, or revoked as of this receipt's issued_at)"
 		} else if err := receipt.Verify(env, alg, pub); err != nil {
 			rr.Detail = err.Error()
 		} else {
@@ -521,8 +524,9 @@ func verificationPassed(it *item) bool {
 	p := it.p
 	switch it.rec.Type {
 	case "gate.stage.completed":
+		// A skipped stage did not run and must not be counted as a passed verification.
 		s := strings.ToLower(str(p["status"]))
-		return s != "fail" && s != "error"
+		return s != "fail" && s != "error" && s != "skip" && s != "skipped"
 	case "gate.run.decided", "gate.run.enforced":
 		switch strings.ToLower(str(p["decision"])) {
 		case "pass", "allow", "approve", "approved", "merge", "auto_merge", "auto-merge":

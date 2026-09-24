@@ -33,7 +33,15 @@ usage:
                                          anchor now via the configured backends (TSAs, git, dir) and store receipts
   ledger keys list | rotate [--keep-old] [--operator ID]
                                          show / rotate the root-signing keyring (LEDGER_KEYRING_DIR);
-                                         a rotation is recorded in the "ledger" system chain
+                                         a rotation is recorded in the "ledger" system chain;
+                                         list also prints the enrolled stack-receipt trust keyring
+                                         (optionally filtered with --product), even without LEDGER_KEYRING_DIR
+  ledger keys enroll --product P --key-id ID --public-key <base64|@file> [--alg ed25519|ecdsa-p256-sha256]
+                                         enroll a product's receipt-signing public key so
+                                         incident/verify-receipt report it trusted
+  ledger keys revoke --key-id ID --reason R
+                                         revoke an enrolled receipt-signer key; receipts it signed
+                                         before the revocation stay trusted, later ones don't
   ledger project [--rebuild] [--check]   project new records into the domain tables (per-chain cursors);
                                          --rebuild starts from scratch; --check verifies rebuild == stored
   ledger incident --goal ID [--format json|html|md] [--out FILE]
@@ -94,6 +102,11 @@ func main() {
 	format := fs.String("format", "json", "incident: json|html|md")
 	tokName := fs.String("name", "", "token create: token name")
 	tokRole := fs.String("role", "writer", "token create: role (writer|viewer|auditor|admin)")
+	rkProduct := fs.String("product", "", "keys enroll/list: product name (gate|proof|ledger|warrant|harbour|bench)")
+	rkKeyID := fs.String("key-id", "", "keys enroll/revoke: receipt-signer key id")
+	rkPubKey := fs.String("public-key", "", "keys enroll: base64 public key, or @file to read it from a file")
+	rkAlg := fs.String("alg", "ed25519", "keys enroll: ed25519 | ecdsa-p256-sha256")
+	rkReason := fs.String("reason", "", "keys revoke: reason recorded with the revocation")
 	switch cmd {
 	case "verify", "replay", "export", "anchor", "project", "incident":
 		_ = fs.Parse(args)
@@ -272,26 +285,34 @@ func main() {
 			fmt.Printf("anchored %s seq=%d head=%s -> %s\n", c, root.Seq, root.Head, p)
 		}
 	case "keys":
-		if keyring == nil {
-			die("keys requires LEDGER_KEYRING_DIR")
-		}
 		switch sub {
 		case "list":
-			for _, id := range keyring.IDs() {
-				mark := "retired"
-				if id == keyring.ActiveID() {
-					mark = "active"
+			if keyring != nil {
+				fmt.Println("root-signing keyring (LEDGER_KEYRING_DIR):")
+				for _, id := range keyring.IDs() {
+					mark := "retired"
+					if id == keyring.ActiveID() {
+						mark = "active"
+					}
+					fmt.Printf("  %s  %s\n", id, mark)
 				}
-				fmt.Printf("%s  %s\n", id, mark)
 			}
+			runKeysList(ctx, st, *rkProduct)
 		case "rotate":
+			if keyring == nil {
+				die("keys rotate requires LEDGER_KEYRING_DIR")
+			}
 			rot, rec, err := svc.RotateKey(ctx, *operator, *keepOld)
 			if err != nil {
 				die("%v", err)
 			}
 			fmt.Printf("rotated %s -> %s (recorded as %s seq=%d)\n", rot.OldKeyID, rot.NewKeyID, rec.Chain, rec.Seq)
+		case "enroll":
+			runKeysEnroll(ctx, st, *rkProduct, *rkKeyID, *rkPubKey, *rkAlg, *operator)
+		case "revoke":
+			runKeysRevoke(ctx, st, *rkKeyID, *rkReason)
 		default:
-			die("keys requires list|rotate")
+			die("keys requires list|rotate|enroll|revoke")
 		}
 	}
 }

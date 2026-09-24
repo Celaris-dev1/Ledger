@@ -19,6 +19,7 @@ import (
 	"github.com/Celaris-dev1/Ledger/internal/export"
 	"github.com/Celaris-dev1/Ledger/internal/keys"
 	"github.com/Celaris-dev1/Ledger/internal/projection"
+	"github.com/Celaris-dev1/Ledger/internal/receiptkeys"
 	"github.com/Celaris-dev1/Ledger/internal/store"
 	"github.com/Celaris-dev1/Ledger/internal/tenant"
 )
@@ -61,6 +62,10 @@ type Server struct {
 	Signer keys.Signer
 	// Limits caps request cost (body size, page size, export size, per-request timeout).
 	Limits Limits
+	// ReceiptKeys, when set, enables the operator-only /v1/receipt-keys endpoints (enroll,
+	// list, revoke) for the stack-receipt/v1 trust keyring (see internal/receiptkeys). nil ->
+	// 503 on those routes.
+	ReceiptKeys *receiptkeys.Store
 }
 
 // AnchorSource lists (and optionally re-verifies) external anchor receipts of a chain.
@@ -93,6 +98,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/goals/{goal_id}/replay", s.guard(auth.PermRead, s.replay))
 	mux.HandleFunc("GET /v1/export", s.guard(auth.PermExport, s.export))
 	s.registerProjections(mux)
+	s.registerReceiptKeys(mux)
 	return s.withTimeout(mux)
 }
 

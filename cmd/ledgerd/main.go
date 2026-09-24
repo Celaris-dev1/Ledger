@@ -17,6 +17,7 @@ import (
 	"github.com/Celaris-dev1/Ledger/internal/auth"
 	"github.com/Celaris-dev1/Ledger/internal/keys"
 	"github.com/Celaris-dev1/Ledger/internal/projection"
+	"github.com/Celaris-dev1/Ledger/internal/receiptkeys"
 	"github.com/Celaris-dev1/Ledger/internal/store"
 	"github.com/Celaris-dev1/Ledger/internal/tenant"
 	"github.com/Celaris-dev1/Ledger/internal/web"
@@ -62,7 +63,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("ledgerd: %v", err)
 	}
-	apiSrv := &api.Server{Store: st, Token: os.Getenv("LEDGER_TOKEN"), Key: key, Anchors: anchorSvc, Limits: limits}
+	apiSrv := &api.Server{Store: st, Token: os.Getenv("LEDGER_TOKEN"), Key: key, Anchors: anchorSvc, Limits: limits, ReceiptKeys: receiptkeys.Open(st.Pool)}
 	// Compliance/ops: multi-tenancy (LEDGER_TOKENS), payload envelope encryption
 	// (LEDGER_DATA_KEY_DIR) and KMS/Vault root signing (LEDGER_SIGNER).
 	if spec := os.Getenv("LEDGER_TOKENS"); spec != "" {

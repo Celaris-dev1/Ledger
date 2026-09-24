@@ -329,3 +329,26 @@ func TestRebuildEqualsIncremental(t *testing.T) {
 		}
 	}
 }
+
+// TestGateStageSkippedNotCountedPassed ensures a skipped Gate stage is projected as a failed
+// (not passed) verification row: it did not run, so it must not count toward "passed".
+func TestGateStageSkippedNotCountedPassed(t *testing.T) {
+	b := testfix.New()
+	g := "g-gate-skip"
+	b.Add("gate", "gate.run.started", g, A("alice", "coder"), map[string]any{"run_id": "run-skip", "repo": "acme/api", "base": "main", "head": "abc"})
+	b.Add("gate", "gate.stage.completed", g, A("alice", "coder"), map[string]any{"run_id": "run-skip", "stage": "tests", "status": "skipped", "risk": 0, "findings": 0})
+
+	rows := project(b.Recs)
+	found := false
+	for _, v := range rows.Verifications {
+		if v.Verifier == "gate.tests" {
+			found = true
+			if v.Passed {
+				t.Error("skipped gate stage projected as passed")
+			}
+		}
+	}
+	if !found {
+		t.Fatal("skipped stage verification row not found")
+	}
+}
