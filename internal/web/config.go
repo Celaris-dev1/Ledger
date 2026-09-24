@@ -41,6 +41,10 @@ func ConfigFromEnv(getenv func(string) string) (EnvConfig, error) {
 	default:
 		return c, fmt.Errorf("LEDGER_AUTH must be on, off or empty (auto)")
 	}
+	c.Tenancy = getenv("LEDGER_TOKENS") != ""
+	if c.Tenancy && c.AuthMode == "off" {
+		c.Warnings = append(c.Warnings, "LEDGER_AUTH=off ignored: multi-tenancy (LEDGER_TOKENS) is on, so unauthenticated requests are never allowed")
+	}
 	c.Auth.LegacyToken = getenv("LEDGER_TOKEN")
 	c.Auth.LegacyRole = auth.RoleWriter
 	if r := getenv("LEDGER_TOKEN_ROLE"); r != "" {
@@ -99,6 +103,12 @@ func ConfigFromEnv(getenv func(string) string) (EnvConfig, error) {
 // configured at all: no LEDGER_TOKEN, no SSO and no active API tokens (so upgrading an
 // existing unauthenticated deployment changes nothing until an operator adds credentials).
 func (c *EnvConfig) ResolveOpen(ctx context.Context, st auth.Store) (bool, error) {
+	// With tenancy the tenant tokens are credentials the RBAC layer does not know about; open
+	// mode would hand every anonymous (or tenant-token) request to the UI and /v1/stream as an
+	// admin across all tenants.
+	if c.Tenancy {
+		return false, nil
+	}
 	switch c.AuthMode {
 	case "off":
 		if c.Tenancy {

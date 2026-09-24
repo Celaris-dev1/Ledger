@@ -26,6 +26,40 @@ jobs:
       - name: load test (small N in CI; see README "Performance" for 1M-record numbers)
         run: go test -run '^$' -bench . -benchtime 1x ./internal/bench
         env: { LEDGER_BENCH_VERIFY_N: "20000", LEDGER_BENCH_RECORDS: "2000" }
+  e2e:
+    # Real ledgerd/ledger binaries against Postgres, SDKs as subprocesses, fake TSAs, psql
+    # rewrite attack, tenancy/RBAC, and a Playwright UI smoke. The cross-product scenario
+    # (LEDGER_XPRODUCT=1) needs the sibling repos and is not run here.
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ledger
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 2s --health-retries 20
+    env:
+      LEDGER_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/ledger?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version: "1.24" }
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - uses: actions/setup-node@v4
+        with: { node-version: "22" }
+      - name: psql client
+        run: command -v psql || (sudo apt-get update && sudo apt-get install -y postgresql-client)
+      - name: playwright + chromium (outside the repo)
+        run: |
+          mkdir -p "$RUNNER_TEMP/pw" && cd "$RUNNER_TEMP/pw"
+          npm install --no-audit --no-fund playwright@1.55
+          npx playwright install --with-deps chromium
+          echo "LEDGER_E2E_PLAYWRIGHT_DIR=$RUNNER_TEMP/pw" >> "$GITHUB_ENV"
+          echo "LEDGER_E2E_CHROMIUM=$(node -e 'console.log(require("playwright").chromium.executablePath())')" >> "$GITHUB_ENV"
+      - run: scripts/e2e.sh
   sdk-python:
     runs-on: ubuntu-latest
     steps:
