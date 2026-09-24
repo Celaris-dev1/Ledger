@@ -213,7 +213,7 @@ func children(b []byte) ([]asn1.RawValue, error) {
 // parseTSTInfo walks TSTInfo element by element (robust to the many OPTIONAL fields).
 func parseTSTInfo(der []byte) (*Info, asn1.ObjectIdentifier, error) {
 	var seq asn1.RawValue
-	if rest, err := asn1.Unmarshal(der, &seq); err != nil || len(rest) != 0 || seq.Tag != asn1.TagSequence {
+	if rest, err := asn1.Unmarshal(der, &seq); err != nil || len(rest) != 0 || seq.Tag != asn1.TagSequence || !seq.IsCompound {
 		return nil, nil, errors.New("tsa: malformed TSTInfo")
 	}
 	els, err := children(seq.Bytes)
@@ -293,12 +293,15 @@ func VerifyToken(token, digest []byte, opt Options) (*Info, error) {
 	var certs []*x509.Certificate
 	if len(sd.Certificates.Bytes) > 0 {
 		els, err := children(sd.Certificates.Bytes)
-		if err != nil {
+		if err != nil || !sd.Certificates.IsCompound {
 			return nil, errors.New("tsa: malformed certificate set")
 		}
 		for _, e := range els {
-			if e.Class != asn1.ClassUniversal || e.Tag != asn1.TagSequence {
-				continue // other certificate choices are ignored
+			if e.Class != asn1.ClassUniversal {
+				continue // other certificate choices ([0]..[3]) are ignored
+			}
+			if e.Tag != asn1.TagSequence || !e.IsCompound {
+				return nil, errors.New("tsa: malformed certificate set")
 			}
 			c, err := x509.ParseCertificate(e.FullBytes)
 			if err != nil {
@@ -309,25 +312,35 @@ func VerifyToken(token, digest []byte, opt Options) (*Info, error) {
 	}
 
 	sis, err := children(sd.SignerInfos.Bytes)
-	if err != nil || len(sis) != 1 || sis[0].Class != asn1.ClassUniversal || sis[0].Tag != asn1.TagSequence {
+	if err != nil || len(sis) != 1 || sis[0].Class != asn1.ClassUniversal || sis[0].Tag != asn1.TagSequence || !sis[0].IsCompound {
 		return nil, errors.New("tsa: token must carry exactly one SignerInfo")
 	}
 	signer, digAlg, err := verifySignerInfo(sis[0].Bytes, tstDER, certs)
 	if err != nil {
 		return nil, err
 	}
-	if sd.Version != 1 && sd.Version != 3 {
-		return nil, errors.New("tsa: unexpected SignedData version")
+	// RFC 5652 §5.1: eContentType is not id-data, so the version MUST be 3. Accepting 1 as well
+	// left an unsigned field malleable (a different token byte string that still verified).
+	if sd.Version != 3 {
+		return nil, errors.New("tsa: unexpected SignedData version (must be 3)")
 	}
 	algs, err := children(sd.DigestAlgorithms.Bytes)
 	listed := false
 	for _, a := range algs {
 		var ai AlgorithmIdentifier
-		if _, e := asn1.Unmarshal(a.FullBytes, &ai); e == nil && ai.Algorithm.Equal(digAlg) && nullParams(ai) {
+		rest, e := asn1.Unmarshal(a.FullBytes, &ai)
+		if _, known := hashForOID(ai.Algorithm); e != nil || len(rest) != 0 || !known || !nullParams(ai) {
+			// every element must be a well-formed DigestAlgorithmIdentifier (junk elements
+			// used to be skipped, so an altered token still verified)
+			err = errors.New("malformed digestAlgorithms element")
+			break
+		}
+		if ai.Algorithm.Equal(digAlg) {
 			listed = true
 		}
 	}
-	if err != nil || !listed || sd.DigestAlgorithms.Tag != asn1.TagSet || sd.DigestAlgorithms.Class != asn1.ClassUniversal || sd.SignerInfos.Tag != asn1.TagSet || sd.SignerInfos.Class != asn1.ClassUniversal {
+	if err != nil || !listed || sd.DigestAlgorithms.Tag != asn1.TagSet || sd.DigestAlgorithms.Class != asn1.ClassUniversal || !sd.DigestAlgorithms.IsCompound ||
+		sd.SignerInfos.Tag != asn1.TagSet || sd.SignerInfos.Class != asn1.ClassUniversal || !sd.SignerInfos.IsCompound {
 		return nil, errors.New("tsa: SignedData digestAlgorithms does not list the signer digest")
 	}
 	if !miAlg.Equal(OIDSHA256) || !bytes.Equal(info.HashedMsg, digest) {
@@ -379,6 +392,11 @@ func verifySignerInfo(siBody, content []byte, certs []*x509.Certificate) (*x509.
 	sid := els[i]
 	i++
 	var signer *x509.Certificate
+	// RFC 5652 §5.3: version 1 iff sid is issuerAndSerialNumber, 3 iff subjectKeyIdentifier
+	// (the version is not signed; tying it to sid keeps the encoding non-malleable).
+	if isIAS := sid.Class == asn1.ClassUniversal && sid.Tag == asn1.TagSequence; isIAS != (version == 1) {
+		return nil, nil, errors.New("tsa: SignerInfo version does not match its signer identifier")
+	}
 	switch {
 	case sid.Class == asn1.ClassUniversal && sid.Tag == asn1.TagSequence:
 		var ias issuerAndSerial
@@ -409,7 +427,7 @@ func verifySignerInfo(siBody, content []byte, certs []*x509.Certificate) (*x509.
 	if !ok || !nullParams(digAlg) || h == crypto.SHA1 {
 		return nil, nil, fmt.Errorf("tsa: unsupported digest algorithm %v", digAlg.Algorithm)
 	}
-	if !(els[i].Class == asn1.ClassContextSpecific && els[i].Tag == 0) {
+	if !(els[i].Class == asn1.ClassContextSpecific && els[i].Tag == 0 && els[i].IsCompound) {
 		return nil, nil, errors.New("tsa: SignerInfo has no signedAttrs (required for TST tokens)")
 	}
 	signedAttrs := els[i]
@@ -472,12 +490,20 @@ func verifySignerInfo(siBody, content []byte, certs []*x509.Certificate) (*x509.
 	sh := h.New()
 	sh.Write(toSign)
 	sum := sh.Sum(nil)
+	// The signatureAlgorithm is not signed: it must agree with the key type and the digest
+	// algorithm, else a token whose OID was rewritten (e.g. ecdsa-with-SHA256 to SHA384)
+	// still verified.
+	if !sigAlgMatches(sigAlg.Algorithm, signer.PublicKey, h) {
+		return nil, nil, errors.New("tsa: signatureAlgorithm does not match the signer key and digest algorithm")
+	}
 	switch pub := signer.PublicKey.(type) {
 	case *rsa.PublicKey:
-		if err := rsa.VerifyPKCS1v15(pub, h, sum, sig); err != nil {
-			if err2 := rsa.VerifyPSS(pub, h, sum, sig, nil); err2 != nil {
+		if sigAlg.Algorithm.Equal(oidRSAPSS) {
+			if rsa.VerifyPSS(pub, h, sum, sig, nil) != nil {
 				return nil, nil, errors.New("tsa: signature verification failed")
 			}
+		} else if rsa.VerifyPKCS1v15(pub, h, sum, sig) != nil {
+			return nil, nil, errors.New("tsa: signature verification failed")
 		}
 	case *ecdsa.PublicKey:
 		if !ecdsa.VerifyASN1(pub, sum, sig) {
@@ -503,6 +529,39 @@ var sigAlgOIDs = []asn1.ObjectIdentifier{
 	{1, 2, 840, 10045, 4, 3, 3},   // ecdsa-with-SHA384
 	{1, 2, 840, 10045, 4, 3, 4},   // ecdsa-with-SHA512
 	{1, 3, 101, 112},              // Ed25519
+}
+
+var oidRSAPSS = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 1, 10}
+
+// sigAlgMatches ties a signatureAlgorithm OID to the signer's key type and (where the OID
+// names one) the SignerInfo digest algorithm.
+func sigAlgMatches(o asn1.ObjectIdentifier, pub crypto.PublicKey, h crypto.Hash) bool {
+	last := o[len(o)-1]
+	switch pub.(type) {
+	case *rsa.PublicKey:
+		if len(o) != 7 || o[3] != 113549 || o[4] != 1 || o[5] != 1 {
+			return false
+		}
+		switch last {
+		case 1, 10:
+			return true
+		case 11:
+			return h == crypto.SHA256
+		case 12:
+			return h == crypto.SHA384
+		case 13:
+			return h == crypto.SHA512
+		}
+		return false
+	case *ecdsa.PublicKey:
+		if len(o) != 7 || o[3] != 10045 || o[4] != 4 || o[5] != 3 {
+			return false
+		}
+		return (last == 2 && h == crypto.SHA256) || (last == 3 && h == crypto.SHA384) || (last == 4 && h == crypto.SHA512)
+	case ed25519.PublicKey:
+		return o.Equal(asn1.ObjectIdentifier{1, 3, 101, 112})
+	}
+	return false
 }
 
 func knownSigAlg(a AlgorithmIdentifier) bool {
