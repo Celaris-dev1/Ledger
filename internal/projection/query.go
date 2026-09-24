@@ -12,7 +12,7 @@ type Reader interface {
 	Rows(ctx context.Context, goalID string) (*Rows, error)
 }
 
-// Rows implements Reader for the in-memory model.
+// RowsFor returns the in-memory projection filtered to one goal ("" = all).
 func (m *Model) RowsFor(_ context.Context, goalID string) (*Rows, error) {
 	return FilterGoal(m.Rows(), goalID), nil
 }
@@ -20,7 +20,9 @@ func (m *Model) RowsFor(_ context.Context, goalID string) (*Rows, error) {
 // ModelReader adapts *Model to Reader.
 type ModelReader struct{ M *Model }
 
-func (r ModelReader) Rows(ctx context.Context, goalID string) (*Rows, error) { return r.M.RowsFor(ctx, goalID) }
+func (r ModelReader) Rows(ctx context.Context, goalID string) (*Rows, error) {
+	return r.M.RowsFor(ctx, goalID)
+}
 
 // FilterGoal keeps only rows of one goal ("" keeps everything).
 func FilterGoal(all *Rows, goal string) *Rows {
