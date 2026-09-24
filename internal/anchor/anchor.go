@@ -21,6 +21,7 @@ type Root struct {
 	Head      string `json:"head"`
 	Signature string `json:"signature"`
 	PublicKey string `json:"public_key"`
+	KeyID     string `json:"key_id,omitempty"` // KeyID(public key); not part of the signed message
 	SignedAt  string `json:"signed_at,omitempty"`
 }
 
@@ -71,6 +72,7 @@ func Sign(key ed25519.PrivateKey, chain string, seq int64, head string) Root {
 		Chain: chain, Seq: seq, Head: head,
 		Signature: base64.StdEncoding.EncodeToString(sig),
 		PublicKey: base64.StdEncoding.EncodeToString(key.Public().(ed25519.PublicKey)),
+		KeyID:     KeyID(key.Public().(ed25519.PublicKey)),
 		SignedAt:  time.Now().UTC().Format(time.RFC3339),
 	}
 }
