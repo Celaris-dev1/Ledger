@@ -112,12 +112,35 @@ func (s *Store) VerifyStream(ctx context.Context, chain string, batch int) (Veri
 		batch = VerifyBatchSize
 	}
 	v := NewVerifier(chain)
-	var after int64
-	for {
-		recs, err := s.ChainBatch(ctx, chain, after, batch)
-		if err != nil {
-			return VerifyResult{}, err
+	// Prefetch: the next page is read from Postgres while the current one is hashed.
+	type page struct {
+		recs []Record
+		err  error
+	}
+	pages := make(chan page, 2)
+	fctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	go func() {
+		defer close(pages)
+		var after int64
+		for {
+			recs, err := s.ChainBatch(fctx, chain, after, batch)
+			select {
+			case pages <- page{recs, err}:
+			case <-fctx.Done():
+				return
+			}
+			if err != nil || len(recs) < batch {
+				return
+			}
+			after = recs[len(recs)-1].Seq
 		}
+	}()
+	for pg := range pages {
+		if pg.err != nil {
+			return VerifyResult{}, pg.err
+		}
+		recs := pg.recs
 		if len(recs) == 0 {
 			break
 		}
@@ -129,10 +152,6 @@ func (s *Store) VerifyStream(ctx context.Context, chain string, batch int) (Veri
 				v.Res.Length = total
 			}
 			return v.Res, nil
-		}
-		after = recs[len(recs)-1].Seq
-		if len(recs) < batch {
-			break
 		}
 	}
 	res := v.Res

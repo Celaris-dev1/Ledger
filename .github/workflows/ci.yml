@@ -23,6 +23,9 @@ jobs:
       - run: go build ./...
       - run: go vet ./...
       - run: go test -race ./...
+      - name: load test (small N in CI; see README "Performance" for 1M-record numbers)
+        run: go test -run '^$' -bench . -benchtime 1x ./internal/bench
+        env: { LEDGER_BENCH_VERIFY_N: "20000", LEDGER_BENCH_RECORDS: "2000" }
   sdk-python:
     runs-on: ubuntu-latest
     steps:

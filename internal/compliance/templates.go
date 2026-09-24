@@ -231,7 +231,7 @@ func hipaa() Template {
 						tk := tokenIssuanceFinding(ev)
 						agents := false
 						for _, r := range ev.Records {
-							if len(actors(r)) > 1 {
+							if hasAgent(r) {
 								agents = true
 								break
 							}

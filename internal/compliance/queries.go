@@ -68,6 +68,15 @@ func actors(r store.Record) []store.Actor {
 	return a
 }
 
+func hasAgent(r store.Record) bool {
+	for _, a := range actors(r) {
+		if a.Kind == "agent" {
+			return true
+		}
+	}
+	return false
+}
+
 // oversight record types: human approvals/denials/halts across the six products.
 var oversightTypes = TypeHas("approval.granted", "approval.denied", "approval.decided", "approval.approved",
 	"token.revoked", "call.denied", "run.decided", "override", "halt", "goal.transition", "admin.")

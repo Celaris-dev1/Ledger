@@ -223,37 +223,57 @@ func (s *Store) Append(ctx context.Context, req AppendRequest) (*Record, error) 
 	if err != nil {
 		return nil, err
 	}
+	// Round trips are pipelined (ledger bench): one batch takes the per-chain lock, creates the
+	// chain if needed, looks up the idempotency key and reads the head; a second batch writes the
+	// record, advances the head and upserts the domain rows. Semantics are unchanged: appends
+	// to a chain are serialized by the transaction-scoped advisory lock + the head row lock.
 	tx, err := s.Pool.Begin(ctx)
 	if err != nil {
 		return nil, err
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck
-	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(8410, hashtext($1))`, req.Chain); err != nil {
-		return nil, err
-	}
-	if _, err := tx.Exec(ctx, `INSERT INTO chains(name) VALUES ($1) ON CONFLICT DO NOTHING`, req.Chain); err != nil {
-		return nil, err
-	}
+	b1 := &pgx.Batch{}
+	b1.Queue(`SELECT pg_advisory_xact_lock(8410, hashtext($1))`, req.Chain)
+	b1.Queue(`INSERT INTO chains(name) VALUES ($1) ON CONFLICT DO NOTHING`, req.Chain)
 	if req.IdempotencyKey != "" {
-		rows, err := tx.Query(ctx, selectColsWithKey+` WHERE chain=$1 AND idempotency_key=$2`, req.Chain, req.IdempotencyKey)
+		b1.Queue(selectColsWithKey+` WHERE chain=$1 AND idempotency_key=$2`, req.Chain, req.IdempotencyKey)
+	}
+	b1.Queue(`SELECT head_seq, head_hash FROM chains WHERE name=$1 FOR UPDATE`, req.Chain)
+	br := tx.SendBatch(ctx, b1)
+	if _, err := br.Exec(); err != nil {
+		br.Close()
+		return nil, err
+	}
+	if _, err := br.Exec(); err != nil {
+		br.Close()
+		return nil, err
+	}
+	var existing []Record
+	if req.IdempotencyKey != "" {
+		rows, err := br.Query()
 		if err != nil {
+			br.Close()
 			return nil, err
 		}
-		existing, err := scanRecordsWithKey(rows)
-		if err != nil {
+		if existing, err = scanRecordsWithKey(rows); err != nil {
+			br.Close()
 			return nil, err
-		}
-		if len(existing) > 0 {
-			if err := tx.Commit(ctx); err != nil {
-				return nil, err
-			}
-			return &existing[0], nil
 		}
 	}
 	var headSeq int64
 	var headHash string
-	if err := tx.QueryRow(ctx, `SELECT head_seq, head_hash FROM chains WHERE name=$1 FOR UPDATE`, req.Chain).Scan(&headSeq, &headHash); err != nil {
+	if err := br.QueryRow().Scan(&headSeq, &headHash); err != nil {
+		br.Close()
 		return nil, err
+	}
+	if err := br.Close(); err != nil {
+		return nil, err
+	}
+	if len(existing) > 0 {
+		if err := tx.Commit(ctx); err != nil {
+			return nil, err
+		}
+		return &existing[0], nil
 	}
 	rec := &Record{
 		ID:             newUUID(),
@@ -271,27 +291,28 @@ func (s *Store) Append(ctx context.Context, req AppendRequest) (*Record, error) 
 	if rec.Hash, err = ComputeHash(rec); err != nil {
 		return nil, err
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO records(id,chain,seq,type,goal_id,actor_chain,policy_version,payload,created_at,prev_hash,hash,idempotency_key)
+	b2 := &pgx.Batch{}
+	b2.Queue(`INSERT INTO records(id,chain,seq,type,goal_id,actor_chain,policy_version,payload,created_at,prev_hash,hash,idempotency_key)
 		VALUES ($1,$2,$3,$4,NULLIF($5,''),$6,NULLIF($7,''),$8,$9,$10,$11,NULLIF($12,''))`,
 		rec.ID, rec.Chain, rec.Seq, rec.Type, rec.GoalID, string(rec.ActorChain), rec.PolicyVersion, string(rec.Payload), rec.CreatedAt, rec.PrevHash, rec.Hash, rec.IdempotencyKey)
-	if err != nil {
-		return nil, err
+	b2.Queue(`UPDATE chains SET head_seq=$2, head_hash=$3, updated_at=now() WHERE name=$1`, rec.Chain, rec.Seq, rec.Hash)
+	// Projections into the domain tables (one statement for all actors).
+	ids, kinds, models, versions := make([]string, len(req.ActorChain)), make([]string, len(req.ActorChain)), make([]string, len(req.ActorChain)), make([]string, len(req.ActorChain))
+	for i, a := range req.ActorChain {
+		ids[i], kinds[i], models[i], versions[i] = a.ID, a.Kind, a.Model, a.ModelVersion
 	}
-	if _, err := tx.Exec(ctx, `UPDATE chains SET head_seq=$2, head_hash=$3, updated_at=now() WHERE name=$1`, rec.Chain, rec.Seq, rec.Hash); err != nil {
-		return nil, err
-	}
-	// Projections into the domain tables.
-	for _, a := range req.ActorChain {
-		if _, err := tx.Exec(ctx, `INSERT INTO operators(id,kind,model,model_version) VALUES ($1,$2,NULLIF($3,''),NULLIF($4,'')) ON CONFLICT (id) DO NOTHING`,
-			a.ID, a.Kind, a.Model, a.ModelVersion); err != nil {
-			return nil, err
-		}
-	}
+	b2.Queue(`INSERT INTO operators(id,kind,model,model_version)
+		SELECT DISTINCT ON (id) id, kind, NULLIF(model,''), NULLIF(mv,'') FROM unnest($1::text[], $2::text[], $3::text[], $4::text[]) AS a(id,kind,model,mv)
+		ON CONFLICT (id) DO NOTHING`, ids, kinds, models, versions)
 	if rec.GoalID != "" {
-		if _, err := tx.Exec(ctx, `INSERT INTO goals(id, originating_human_id, first_record_id) VALUES ($1,$2,$3)
-			ON CONFLICT (id) DO UPDATE SET updated_at=now()`, rec.GoalID, req.ActorChain[0].ID, rec.ID); err != nil {
-			return nil, err
-		}
+		// DO NOTHING (not DO UPDATE SET updated_at): rewriting the goal row on every append made
+		// concurrent writers on different chains of the same goal queue on its row lock.
+		// goals.updated_at is maintained by the projector.
+		b2.Queue(`INSERT INTO goals(id, originating_human_id, first_record_id) VALUES ($1,$2,$3)
+			ON CONFLICT (id) DO NOTHING`, rec.GoalID, req.ActorChain[0].ID, rec.ID)
+	}
+	if err := tx.SendBatch(ctx, b2).Close(); err != nil {
+		return nil, err
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, err

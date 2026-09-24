@@ -67,6 +67,9 @@ func main() {
 		os.Exit(2)
 	}
 	cmd, args := os.Args[1], os.Args[2:]
+	if runOps(cmd, args) {
+		return
+	}
 	fs := flag.NewFlagSet(cmd, flag.ExitOnError)
 	var chains multi
 	fs.Var(&chains, "chain", "chain name (repeatable)")
@@ -92,10 +95,10 @@ func main() {
 		sub = args[0]
 		_ = fs.Parse(args[1:])
 	case "-h", "--help", "help":
-		fmt.Print(usage)
+		fmt.Print(usage + opsUsage)
 		return
 	default:
-		fmt.Fprint(os.Stderr, usage)
+		fmt.Fprint(os.Stderr, usage+opsUsage)
 		os.Exit(2)
 	}
 	ctx := context.Background()
