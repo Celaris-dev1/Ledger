@@ -21,6 +21,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -284,6 +285,8 @@ type Verifier struct {
 	GitDir string
 }
 
+var gitCommitRe = regexp.MustCompile(`^[0-9a-f]{7,64}$`)
+
 // ErrUnverifiable marks receipts that cannot be checked with the given configuration.
 var ErrUnverifiable = errors.New("unverifiable")
 
@@ -310,6 +313,11 @@ func (v Verifier) VerifyReceipt(r Receipt, s Subject) (time.Time, error) {
 		if r.Kind == KindGit && v.GitDir != "" {
 			var m struct{ Commit, Path string }
 			_ = json.Unmarshal(r.Meta, &m)
+			// Meta comes from the database being audited: never let it become a git option
+			// (e.g. commit "--output=/some/file" would make `git show` write a file).
+			if !gitCommitRe.MatchString(m.Commit) || m.Path == "" || strings.HasPrefix(m.Path, "-") {
+				return time.Time{}, fmt.Errorf("git receipt has a malformed commit/path (%q, %q)", m.Commit, m.Path)
+			}
 			got, err := runGit(context.Background(), v.GitDir, "show", m.Commit+":"+m.Path)
 			if err != nil {
 				return time.Time{}, fmt.Errorf("commit %s not found in %s: %v", m.Commit, v.GitDir, err)

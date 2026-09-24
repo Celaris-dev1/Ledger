@@ -26,6 +26,8 @@ func TestAppendRejectsUnstorableInput(t *testing.T) {
 		"nul actor model": func(r *AppendRequest) {
 			r.ActorChain = append(r.ActorChain, Actor{Kind: "agent", ID: "b", Model: "\x00"})
 		},
+		"newline chain":    func(r *AppendRequest) { r.Chain = "a\n1" },
+		"tab chain":        func(r *AppendRequest) { r.Chain = "a\tb" },
 		"huge chain":       func(r *AppendRequest) { r.Chain = big },
 		"huge idem key":    func(r *AppendRequest) { r.IdempotencyKey = big },
 		"huge goal":        func(r *AppendRequest) { r.GoalID = big },

@@ -79,6 +79,9 @@ func (r *AppendRequest) Validate() error {
 	if strings.TrimSpace(r.Chain) == "" {
 		return &ValidationError{"chain is required"}
 	}
+	if strings.ContainsFunc(r.Chain, func(c rune) bool { return c < 0x20 || c == 0x7f }) {
+		return &ValidationError{"chain must not contain control characters"}
+	}
 	if strings.TrimSpace(r.Type) == "" {
 		return &ValidationError{"type is required"}
 	}
