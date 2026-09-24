@@ -6,7 +6,8 @@ COPY . .
 RUN CGO_ENABLED=0 go build -o /out/ledgerd ./cmd/ledgerd && CGO_ENABLED=0 go build -o /out/ledger ./cmd/ledger
 
 FROM alpine:3.20
-RUN adduser -D -u 10001 ledger && mkdir -p /data && chown ledger /data
+# git: external anchoring to a git repo; ca-certificates: RFC 3161 TSAs over https
+RUN apk add --no-cache git ca-certificates && adduser -D -u 10001 ledger && mkdir -p /data && chown ledger /data
 COPY --from=build /out/ /usr/local/bin/
 USER ledger
 WORKDIR /data
