@@ -114,6 +114,48 @@ func runCmd(t *testing.T, dir string, env []string, name string, args ...string)
 	return string(out), code
 }
 
+// receiptKeyFile picks the per-run stack-receipt signing key file for product envVar (e.g.
+// "HARBOUR_RECEIPT_KEY_FILE"): the caller's own value if set (so scripts/stack-demo.sh can hand
+// in a reproducible per-run path), else a fresh path under bin. Either way the file does not yet
+// exist -- the product creates it on first use -- so every run of this scenario signs with its
+// own throwaway key and never touches a real developer key on disk.
+func receiptKeyFile(envVar, bin, name string) string {
+	if v := os.Getenv(envVar); v != "" {
+		return v
+	}
+	return filepath.Join(bin, name)
+}
+
+// keysShowField extracts one "field:   value" line from a product's `keys show` /
+// `keys receipt-show` output.
+func keysShowField(t *testing.T, out, field string) string {
+	t.Helper()
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		if v, ok := strings.CutPrefix(line, field+":"); ok {
+			return strings.TrimSpace(v)
+		}
+	}
+	t.Fatalf("keys show output missing %q:\n%s", field, out)
+	return ""
+}
+
+// enrollReceiptKey runs a product's `keys show`/`keys receipt-show` command (with the same env
+// -- notably its *_RECEIPT_KEY_FILE -- the product's real process will run with) and enrolls the
+// key it prints with Ledger via `ledger keys enroll`, so that product's stack-receipts verify as
+// trusted:true in the incident report.
+func enrollReceiptKey(t *testing.T, e *Env, dir string, env []string, product, bin string, args ...string) {
+	t.Helper()
+	out, code := runCmd(t, dir, env, bin, args...)
+	if code != 0 {
+		t.Fatalf("%s keys show: exit %d\n%s", product, code, out)
+	}
+	keyID := keysShowField(t, out, "key_id")
+	alg := keysShowField(t, out, "alg")
+	pub := keysShowField(t, out, "public_key")
+	e.MustLedger("keys", "enroll", "--product", product, "--key-id", keyID, "--public-key", pub, "--alg", alg)
+}
+
 func postJSON(t *testing.T, u string, hdr map[string]string, body any, into any) int {
 	t.Helper()
 	b, _ := json.Marshal(body)
@@ -164,8 +206,11 @@ func TestCrossProductIncident(t *testing.T) {
 	hc.Close(t.Context())
 	haddr := freePort(t)
 	hurl := "http://" + haddr
+	hKeyFile := receiptKeyFile("HARBOUR_RECEIPT_KEY_FILE", bin, "harbour-receipt.key")
+	hReceiptEnv := []string{"HARBOUR_RECEIPT_KEY_FILE=" + hKeyFile}
+	enrollReceiptKey(t, e, bin, hReceiptEnv, "harbour", harbourd, "keys", "show")
 	startProc(t, "harbourd", harbourd, []string{"-addr", haddr, "-db", withSearchPath(baseURL, hschema), "-demo-dir", filepath.Join(bin, "harbour-data"), "-workers", "1"},
-		ledgerEnv("harbour"), bin, hurl+"/healthz")
+		append(ledgerEnv("harbour"), hReceiptEnv...), bin, hurl+"/healthz")
 	henv := []string{"HARBOUR_URL=" + hurl, "HARBOUR_USER=" + human}
 	out, code := runCmd(t, bin, henv, harbour, "submit", "-name", "xp-"+randHex(3), "-agent", "demo.writer", "-approve",
 		"-input", `{"file":"release-notes.txt","lines":["v1.2: fix login","v1.2: faster search"]}`)
@@ -199,9 +244,12 @@ func TestCrossProductIncident(t *testing.T) {
 	_ = os.WriteFile(routes, []byte(`[{"tool":"*","upstream":"`+tool.URL+`/tool"}]`), 0o644)
 	baddr, paddr := freePort(t), freePort(t)
 	burl, purl := "http://"+baddr, "http://"+paddr
-	startProc(t, "warrantd", warrantd, nil, append(ledgerEnv("warrant"),
+	wKeyFile := receiptKeyFile("WARRANT_RECEIPT_KEY_FILE", bin, "warrant-receipt.key")
+	wReceiptEnv := []string{"WARRANT_RECEIPT_KEY_FILE=" + wKeyFile}
+	enrollReceiptKey(t, e, bin, wReceiptEnv, "warrant", warrantd, "keys", "show")
+	startProc(t, "warrantd", warrantd, nil, append(append(ledgerEnv("warrant"),
 		"WARRANT_ADMIN_TOKEN=xp-admin", "WARRANT_ADDR="+baddr, "WARRANT_PEP_ADDR="+paddr,
-		"WARRANT_POLICY="+filepath.Join(root, "Warrant", "examples", "policy.json"), "WARRANT_ROUTES="+routes), bin, burl+"/healthz")
+		"WARRANT_POLICY="+filepath.Join(root, "Warrant", "examples", "policy.json"), "WARRANT_ROUTES="+routes), wReceiptEnv...), bin, burl+"/healthz")
 	adm := map[string]string{"Authorization": "Bearer xp-admin"}
 	for _, w := range []string{"planner", "worker"} {
 		if st := postJSON(t, burl+"/v1/workloads", adm, map[string]any{"name": w, "secret": w + "-registration-secret-0123"}, nil); st/100 != 2 {
@@ -253,7 +301,10 @@ func TestCrossProductIncident(t *testing.T) {
 	diffOut, _ := runCmd(t, repo, nil, "git", "diff")
 	_ = os.WriteFile(filepath.Join(bin, "change.diff"), []byte(diffOut), 0o644)
 	_, _ = runCmd(t, repo, nil, "git", "checkout", "--", ".")
-	gout, gcode := runCmd(t, bin, append(ledgerEnv("gate"), "GATE_PROFILE=off", "ANTHROPIC_API_KEY="), gate, "run", "--repo", repo, "--base", "HEAD",
+	gKeyFile := receiptKeyFile("GATE_RECEIPT_KEY_FILE", bin, "gate-receipt.key")
+	gReceiptEnv := []string{"GATE_RECEIPT_KEY_FILE=" + gKeyFile}
+	enrollReceiptKey(t, e, bin, gReceiptEnv, "gate", gate, "keys", "show")
+	gout, gcode := runCmd(t, bin, append(append(ledgerEnv("gate"), "GATE_PROFILE=off", "ANTHROPIC_API_KEY="), gReceiptEnv...), gate, "run", "--repo", repo, "--base", "HEAD",
 		"--diff", filepath.Join(bin, "change.diff"), "--goal", goal, "--human", human, "--agent", "coder", "--agent-model", "m-1",
 		"--sandbox", "local", "--no-explain", "--format", "json", "--exit-zero")
 	if gcode != 0 {
@@ -272,10 +323,23 @@ func TestCrossProductIncident(t *testing.T) {
 	}))
 	t.Cleanup(site.Close)
 	proofDist := buildProof(t, filepath.Join(root, "Proof"), bin)
-	pout, pcode := runCmd(t, bin, append(ledgerEnv("proof"), "PROOF_DATA_DIR="+filepath.Join(bin, "proof-data"), "PROOF_HUMAN_ID="+human, "PROOF_DATABASE_URL="),
+	pKeyDir := receiptKeyFile("PROOF_KEY_DIR", bin, "proof-receipt-keys")
+	pReceiptEnv := []string{"PROOF_KEY_DIR=" + pKeyDir}
+	enrollReceiptKey(t, e, bin, pReceiptEnv, "proof", "node", filepath.Join(proofDist, "cli.js"), "keys", "receipt-show")
+	pout, pcode := runCmd(t, bin, append(append(ledgerEnv("proof"), "PROOF_DATA_DIR="+filepath.Join(bin, "proof-data"), "PROOF_HUMAN_ID="+human, "PROOF_DATABASE_URL="), pReceiptEnv...),
 		"node", filepath.Join(proofDist, "cli.js"), "capture", site.URL+"/notes", "--run", goal, "--seal")
 	if pcode != 0 {
 		t.Fatalf("proof capture: exit %d\n%s", pcode, pout)
+	}
+
+	// ---- Bench: not part of this scenario's goal, but the demo enrolls its receipt key too so
+	// the stack-wide trust store this test seeds is complete for any Bench receipts a fuller run
+	// would produce (scripts/stack-demo.sh asserts on it). Skipped, not fatal, if no sibling
+	// Bench checkout is present.
+	if _, err := os.Stat(filepath.Join(root, "Bench", "go.mod")); err == nil {
+		bench := goBuild(t, filepath.Join(root, "Bench"), "./cmd/bench", filepath.Join(bin, "bench"))
+		bKeyFile := receiptKeyFile("BENCH_RECEIPT_KEY_FILE", bin, "bench-receipt.key")
+		enrollReceiptKey(t, e, bin, []string{"BENCH_RECEIPT_KEY_FILE=" + bKeyFile}, "bench", bench, "keys", "show")
 	}
 
 	// ---- Assertions. ----
