@@ -15,8 +15,10 @@ import (
 	"github.com/Celaris-dev1/Ledger/internal/anchoring"
 	"github.com/Celaris-dev1/Ledger/internal/api"
 	"github.com/Celaris-dev1/Ledger/internal/auth"
+	"github.com/Celaris-dev1/Ledger/internal/keys"
 	"github.com/Celaris-dev1/Ledger/internal/projection"
 	"github.com/Celaris-dev1/Ledger/internal/store"
+	"github.com/Celaris-dev1/Ledger/internal/tenant"
 	"github.com/Celaris-dev1/Ledger/internal/web"
 )
 
@@ -57,6 +59,28 @@ func main() {
 	}
 	addr := env("LEDGER_ADDR", ":8410")
 	apiSrv := &api.Server{Store: st, Token: os.Getenv("LEDGER_TOKEN"), Key: key, Anchors: anchorSvc}
+	// Compliance/ops: multi-tenancy (LEDGER_TOKENS), payload envelope encryption
+	// (LEDGER_DATA_KEY_DIR) and KMS/Vault root signing (LEDGER_SIGNER).
+	if spec := os.Getenv("LEDGER_TOKENS"); spec != "" {
+		toks, err := tenant.ParseTokens(spec)
+		if err != nil {
+			log.Fatalf("ledgerd: %v", err)
+		}
+		apiSrv.Tenants = toks
+		apiSrv.TenantStore = func(t string) (api.Backend, error) { return tenant.New(st, t) }
+		log.Printf("ledgerd: multi-tenancy on (%d tokens); LEDGER_TOKEN ignored", len(toks))
+	}
+	if d := os.Getenv("LEDGER_DATA_KEY_DIR"); d != "" {
+		apiSrv.DataKeys = &keys.FileDataKeyStore{Dir: d}
+	}
+	if s := os.Getenv("LEDGER_SIGNER"); s != "" && s != "file" {
+		sg, err := keys.SignerFromEnv(ctx, os.Getenv, key)
+		if err != nil {
+			log.Fatalf("ledgerd: signer: %v", err)
+		}
+		apiSrv.Signer = sg
+		log.Printf("ledgerd: roots signed by %s key %s", s, sg.KeyID())
+	}
 	// Projections: async, bounded (one coalesced pending run) catch-up after each
 	// append plus a periodic sweep. LEDGER_PROJECTIONS=off disables them.
 	if os.Getenv("LEDGER_PROJECTIONS") != "off" {

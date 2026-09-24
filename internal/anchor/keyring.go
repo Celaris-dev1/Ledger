@@ -187,7 +187,8 @@ func VerifyRotation(r Rotation) error {
 	return nil
 }
 
-// TrustSet is a set of trusted root-signing public keys by id.
+// TrustSet is a set of trusted root-signing public keys by id. ECDSA keys (KMS/Vault) are
+// stored under their "ecdsa-p256:" id with the PKIX DER bytes as value.
 type TrustSet map[string]ed25519.PublicKey
 
 // TrustFromRotations starts from the given trusted keys and adds every key introduced by a valid
@@ -218,8 +219,7 @@ func VerifyRootTrusted(r Root, trust TrustSet) error {
 	if !VerifyRoot(r) {
 		return errors.New("root signature invalid")
 	}
-	pub, _ := base64.StdEncoding.DecodeString(r.PublicKey)
-	id := KeyID(pub)
+	id := RootKeyID(r)
 	if r.KeyID != "" && r.KeyID != id {
 		return errors.New("root key_id does not match its public key")
 	}
