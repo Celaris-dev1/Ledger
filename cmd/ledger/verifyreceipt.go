@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"flag"
@@ -9,24 +10,31 @@ import (
 	"os"
 
 	"github.com/Celaris-dev1/Ledger/internal/receipt"
+	"github.com/Celaris-dev1/Ledger/internal/receiptkeys"
+	"github.com/Celaris-dev1/Ledger/internal/store"
 )
 
-const verifyReceiptUsage = `  ledger verify-receipt [--file PATH] [--pubkey BASE64 --alg ed25519|ecdsa-p256-sha256]
+const verifyReceiptUsage = `  ledger verify-receipt [--file PATH] [--pubkey BASE64 --alg ed25519|ecdsa-p256-sha256] [--no-db]
                                          verify a stack-receipt/v1 envelope's structure and signature;
-                                         reads from --file or stdin; without --pubkey, trusts the
-                                         envelope's own signer_key_id only for structural checks and
-                                         prints it without asserting trust (exit 1 either way on failure)
+                                         reads from --file or stdin. With --pubkey, verifies against
+                                         that key. Without it, looks the envelope's signer_key_id up in
+                                         the enrolled receipt-key keyring (LEDGER_DATABASE_URL; skip with
+                                         --no-db to stay fully offline) and reports trusted:true only for
+                                         an enrolled, unrevoked key (exit 1 either way on failure)
 `
 
-// runVerifyReceipt implements `ledger verify-receipt`. It never touches the database: a receipt
-// is meant to be verifiable offline by anyone holding the signer's public key, independent of any
-// one Ledger instance's storage.
+// runVerifyReceipt implements `ledger verify-receipt`. With --pubkey (or --no-db), it never
+// touches the database: a receipt is meant to be verifiable offline by anyone holding the
+// signer's public key, independent of any one Ledger instance's storage. Without --pubkey, it
+// defaults to looking the key up in the enrolled receipt-key keyring so an operator can check a
+// receipt against "keys we actually enrolled" without hunting down the raw public key by hand.
 func runVerifyReceipt(args []string) {
 	fs := flag.NewFlagSet("verify-receipt", flag.ExitOnError)
 	file := fs.String("file", "", "path to a JSON stack-receipt/v1 envelope (default: stdin)")
 	pubkeyB64 := fs.String("pubkey", "", "base64 public key to verify against (required to assert trust)")
 	alg := fs.String("alg", "ed25519", "signature algorithm: ed25519 | ecdsa-p256-sha256")
 	asJSON := fs.Bool("json", false, "print a JSON result instead of text")
+	noDB := fs.Bool("no-db", false, "do not consult the enrolled receipt-key keyring")
 	_ = fs.Parse(args)
 
 	var raw []byte
@@ -44,20 +52,43 @@ func runVerifyReceipt(args []string) {
 		result(*asJSON, false, "", fmt.Sprintf("malformed JSON: %v", err))
 		os.Exit(1)
 	}
-	if *pubkeyB64 == "" {
-		// No key supplied: report what the envelope claims, but this is not a trust decision.
-		result(*asJSON, false, env.SignerKeyID, "no --pubkey supplied: cannot assert trust; pass --pubkey (and --alg) to verify the signature")
+
+	var pub []byte
+	usedAlg := *alg
+	trusted := false
+	switch {
+	case *pubkeyB64 != "":
+		pub, err = base64.StdEncoding.DecodeString(*pubkeyB64)
+		if err != nil {
+			die("verify-receipt: --pubkey: %v", err)
+		}
+	case *noDB || os.Getenv("LEDGER_DATABASE_URL") == "":
+		result(*asJSON, false, env.SignerKeyID, "no --pubkey supplied and no enrolled-key lookup available: cannot assert trust; pass --pubkey (and --alg), or set LEDGER_DATABASE_URL")
 		os.Exit(1)
+	default:
+		ctx := context.Background()
+		st, err := store.Open(ctx, os.Getenv("LEDGER_DATABASE_URL"))
+		if err != nil {
+			die("verify-receipt: database: %v", err)
+		}
+		defer st.Close()
+		rk := receiptkeys.Open(st.Pool)
+		gotAlg, gotPub, ok := rk.Trust(ctx, receiptkeys.DefaultTenant)(env.SignerKeyID, env.IssuedAt)
+		if !ok {
+			result(*asJSON, false, env.SignerKeyID, "signer_key_id not enrolled, or revoked as of this receipt's issued_at")
+			os.Exit(1)
+		}
+		usedAlg, pub, trusted = gotAlg, gotPub, true
 	}
-	pub, err := base64.StdEncoding.DecodeString(*pubkeyB64)
-	if err != nil {
-		die("verify-receipt: --pubkey: %v", err)
-	}
-	if err := receipt.Verify(env, *alg, pub); err != nil {
+	if err := receipt.Verify(env, usedAlg, pub); err != nil {
 		result(*asJSON, false, env.SignerKeyID, err.Error())
 		os.Exit(1)
 	}
-	result(*asJSON, true, env.SignerKeyID, "signature and structure verify")
+	detail := "signature and structure verify"
+	if trusted {
+		detail += " (key enrolled and unrevoked)"
+	}
+	result(*asJSON, true, env.SignerKeyID, detail)
 }
 
 func result(asJSON bool, ok bool, keyID, detail string) {
