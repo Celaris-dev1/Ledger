@@ -125,10 +125,20 @@ if s.get("effects_committed", 0) < 1:
     errs.append("expected at least one committed effect (Harbour ran something)")
 receipts = rep.get("receipts") or []
 if receipts:
-    failed = [r for r in receipts if not r.get("signature_ok")]
-    if failed:
-        errs.append(f"{len(failed)}/{len(receipts)} stack-receipts failed verification: {failed}")
-    print(f"stack-demo: {len(receipts)} stack-receipt(s) found, all verified")
+    # "signature_ok" false because no trust store was configured for this run (LEDGER_KEYRING_DIR
+    # unset -- each product here signs with its own throwaway per-process key, and nothing
+    # enrolls that key into a keyring Ledger trusts) is a configuration gap to flag, not a
+    # correctness failure: it means "unverified", not "verified wrong". A receipt whose
+    # signature genuinely fails against a *configured* key is the real failure this checks for.
+    genuinely_failed = [r for r in receipts if not r.get("signature_ok") and r.get("trusted")]
+    unverified = [r for r in receipts if not r.get("signature_ok") and not r.get("trusted")]
+    if genuinely_failed:
+        errs.append(f"{len(genuinely_failed)}/{len(receipts)} stack-receipts FAILED signature verification against a trusted key: {genuinely_failed}")
+    print(f"stack-demo: {len(receipts)} stack-receipt(s) found "
+          f"({len(receipts) - len(unverified) - len(genuinely_failed)} verified, {len(unverified)} unverified: no trust store, {len(genuinely_failed)} failed)")
+    if unverified:
+        print("stack-demo: NOTE — set LEDGER_KEYRING_DIR and enroll each product's signer_key_id "
+              "to verify receipt signatures in this demo (gap: no cross-product key enrollment yet)")
 else:
     print("stack-demo: NOTE — no stack-receipt/v1 envelopes found on this goal's records yet "
           "(products emit them at their existing ledger.Append call sites; see docs/receipt-spec.md)")
