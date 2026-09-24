@@ -18,6 +18,9 @@ import (
 
 // seedGoal appends a goal with steps, an attempt, an approval, a budget and a verification over
 // two chains, all through POST /v1/records, and returns the appended records in order.
+// seedGap spaces seeded records out in time (the UI test needs a timeline with a real span).
+var seedGap time.Duration
+
 func seedGoal(t *testing.T, d *Daemon, token, goal string) []map[string]any {
 	t.Helper()
 	ac := []Actor{human("alice"), agent("planner")}
@@ -40,6 +43,7 @@ func seedGoal(t *testing.T, d *Daemon, token, goal string) []map[string]any {
 		r["actor_chain"] = ac
 		r["policy_version"] = "pol-7"
 		out = append(out, d.Append(token, r))
+		time.Sleep(seedGap)
 	}
 	return out
 }

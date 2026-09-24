@@ -240,6 +240,19 @@ LEDGER_TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/ledger?sslm
 
 DB tests run in a throwaway schema per test and drop it afterwards.
 
+**End-to-end suite** (`e2e/`, build tag `e2e`, CI job `e2e`): `scripts/e2e.sh` builds the real
+`ledgerd` and `ledger` binaries and drives them against Postgres: HTTP append/verify/replay,
+projections and incident review; the Python and TS SDKs as subprocesses through a ledgerd crash,
+spool and restart (exactly-once via idempotency keys); SSE resume across a restart; fake RFC 3161
+TSAs (2-of-3) + a bare git repo with the scheduler, a psql rewrite attack that `verify` misses and
+`verify --anchors` catches, and key rotation; all three regime packs (JSON and PDF verified,
+tampered copies refused), legal hold / retention / erasure, backup → restore into a fresh database
+and a tampered backup refused; tenancy with RBAC under every open-mode setting (no cross-tenant
+reads through the API, UI or SSE); and a Playwright UI smoke (token login, replay, play, in-browser
+hash check, a record tampered in the DB shows a mismatch). With `LEDGER_XPRODUCT=1` it also builds
+Warrant, Harbour, Gate and Proof from sibling checkouts, runs one scenario under a shared goal id
+and checks human-first actor chains, verification, the goal tree and the joined incident.
+
 ## Projections and incident review
 
 `internal/projection` turns records into `goals`, `goal_steps`, `action_attempts`,
