@@ -7,7 +7,9 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // Limits bound what one request may cost. Zero values take the defaults below.
@@ -91,11 +93,25 @@ func (s *Server) withTimeout(next http.Handler) http.Handler {
 		d = defaultTimeout
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Path/query values reach Postgres text parameters, which reject NUL and invalid UTF-8
+		// (a 500 from the database): make them client errors up front.
+		bad := !textOK(r.URL.Path)
+		for _, vs := range r.URL.Query() {
+			for _, v := range vs {
+				bad = bad || !textOK(v)
+			}
+		}
+		if bad {
+			writeErr(w, http.StatusBadRequest, "path and query parameters must be valid UTF-8 without NUL")
+			return
+		}
 		ctx, cancel := context.WithTimeout(r.Context(), d)
 		defer cancel()
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
+
+func textOK(s string) bool { return utf8.ValidString(s) && strings.IndexByte(s, 0) < 0 }
 
 // pageParams parses ?limit=&after= for the paginated list routes.
 func (s *Server) pageParams(w http.ResponseWriter, r *http.Request) (after string, limit int, ok bool) {

@@ -188,3 +188,17 @@ func FuzzPostRecord(f *testing.F) {
 		}
 	})
 }
+
+// Regression (hardening): NUL / invalid UTF-8 in path or query reached Postgres text
+// parameters and came back as 500s.
+func TestBadTextParams(t *testing.T) {
+	h := (&Server{Store: &memBackend{}}).Handler()
+	for _, p := range []string{"/v1/records?chain=%00", "/v1/records?chain=%ff", "/v1/chains/%ff/verify", "/v1/chains/a%00b/root", "/v1/goals/%c3/replay"} {
+		if w := do(t, h, "GET", p, "", ""); w.Code != 400 {
+			t.Errorf("%s: %d", p, w.Code)
+		}
+	}
+	if w := do(t, h, "GET", "/v1/records?chain=%C3%A9", "", ""); w.Code != 200 {
+		t.Fatalf("valid UTF-8: %d", w.Code)
+	}
+}

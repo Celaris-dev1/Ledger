@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -88,7 +89,8 @@ func DecodeCursor(s string) (map[string]int64, bool) {
 	}
 	for k, vs := range v {
 		n, err := strconv.ParseInt(vs[0], 10, 64)
-		if err != nil || n < 0 || k == "" {
+		// (NUL cannot be a chain name and would make the Postgres query fail)
+		if err != nil || n < 0 || k == "" || strings.IndexByte(k, 0) >= 0 {
 			return nil, false
 		}
 		out[k] = n
