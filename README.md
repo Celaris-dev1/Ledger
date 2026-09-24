@@ -274,6 +274,74 @@ narrative covering who authorised what, what ran, what was verified, which effec
 which did not (two-phase intent/result), and hash-chain verification status per source chain.
 The HTML is self-contained (auto-escaped, strict CSP, no scripts) and the Markdown is escaped.
 
+## Web UI and access control
+
+ledgerd serves an auditor-facing UI on the same port as the API (html/template + a little
+vanilla JS, embedded with `embed.FS`, no build step). Disable it with `LEDGER_UI=off` (API only).
+
+| Page | What it shows |
+|---|---|
+| `/chains`, `/chains/{chain}` | length, head, verification status, last external anchor and its witnesses; paged records |
+| `/goals?q=&status=` | goal search over the projections |
+| `/goals/{id}` | **live replay** timeline + goal → steps → attempts → verifications/approvals tree |
+| `/approvals?status=` | approval queue (pending / approved / denied) |
+| `/budgets?goal=` | budget groups, running balances, overspend |
+| `/incidents/{goal}` | the cross-product incident narrative (downloads for auditors) |
+| `/r/{chain}/{seq}` | record permalink; the hash is **re-computed in your browser** |
+| `/admin` | API tokens and SSO users (admin) |
+
+**Replay.** Records are laid out on per-chain lanes by time (T+0 = first record). Scrub with the
+slider, play/pause (Space) at 0.25–60×, step with ← →, jump from the event list or from any
+evidence link in the goal tree (`?at=chain:seq` deep-links). Idle gaps are skipped while playing.
+The side panel shows payload, actor chain (originating human first; a violation is flagged),
+policy version, hash, prev hash, an in-browser hash check, chain verification and anchor status for
+that seq. **Live** subscribes to `GET /v1/stream` and extends the timeline as records arrive.
+
+**Stream.** `GET /v1/stream?chain=&goal_id=` is Server-Sent Events: `event: record`, `data` = the
+record JSON, `id` = the per-chain cursor after it (`gate=12&ledger=40`). Reconnects resume with
+`Last-Event-ID` (or `?cursor=`) without gaps or duplicates; without a cursor it starts at the
+current heads (`?from=start` replays). It is backed by bounded, indexed per-chain reads woken by
+Postgres `LISTEN/NOTIFY` (trigger from migration `0300`), with a poll fallback (`LEDGER_STREAM_POLL`, default 2s).
+
+**Browser verification.** `static/canon.js` is an independent implementation of the canonical
+JSON (literal-preserving parser, keys sorted by UTF-8 bytes, Go's exact string escaping) and the
+record hash, using WebCrypto SHA-256 (a pure-JS fallback on non-secure origins). A golden test runs
+it under node against Go's `internal/canon` on hostile inputs.
+
+**Security.** Strict CSP (`script-src 'self'; style-src 'self'`, no inline code), untrusted values
+only via html/template or `textContent`, `nosniff`, `frame-ancestors 'none'`, same-origin referrer,
+HSTS over TLS, `Cache-Control: no-store` on pages.
+
+### Roles
+
+| | append | contract reads (records, verify, replay, root) | UI, projections, stream, anchors | export (packs, incident downloads) | tokens & users |
+|---|---|---|---|---|---|
+| admin | ✓ | ✓ | ✓ | ✓ | ✓ |
+| auditor | | ✓ | ✓ | ✓ | |
+| viewer | | ✓ | ✓ | | |
+| writer | ✓ | ✓ | | | |
+
+- **API tokens** (`ldg_…`) are stored as SHA-256 only: `ledger token create --name harbour --role writer`,
+  `ledger token list`, `ledger token revoke ID`, or the `/admin` page. Admin/auditor/viewer tokens can
+  also sign in to the UI; writer tokens cannot.
+- **`LEDGER_TOKEN`** keeps working unchanged for the products, now as a writer
+  (`LEDGER_TOKEN_ROLE` to change that; not recommended).
+- **SSO**: OIDC authorization code + PKCE (`LEDGER_OIDC_ISSUER`, `LEDGER_OIDC_CLIENT_ID`,
+  `LEDGER_OIDC_CLIENT_SECRET`, `LEDGER_OIDC_REDIRECT_URL`=`https://host/auth/callback`,
+  `LEDGER_OIDC_SCOPES`, `LEDGER_OIDC_DEFAULT_ROLE` (viewer), `LEDGER_OIDC_ADMIN_EMAILS`,
+  `LEDGER_OIDC_AUDITOR_EMAILS`, `LEDGER_OIDC_ALLOW_DOMAINS`). Role grants and domain checks only
+  honour emails with `email_verified=true`; `email_verified=false` is refused. Roles are re-read
+  on every request (demotion/disable is immediate).
+- **Sessions**: random id in an HttpOnly SameSite=Lax cookie (Secure over TLS or with
+  `LEDGER_SECURE_COOKIES=1`), SHA-256 at rest, `LEDGER_SESSION_TTL` (12h). Unsafe cookie
+  requests need the CSRF token (form field or `X-CSRF-Token`) and a same-origin `Origin`/`Referer`;
+  login redirects accept local paths only.
+- **Open mode**: with no `LEDGER_TOKEN`, no SSO and no API tokens at startup, ledgerd behaves as
+  before (no authentication) and the UI shows a warning banner. `LEDGER_AUTH=on|off` forces it.
+  Creating the first token takes effect at the next restart.
+
+Screenshots (light/dark): [`docs/screenshots/`](docs/screenshots/).
+
 ## Built vs roadmap
 
 Built: schema + migrations, append-only triggers, per-chain hash chain with serialized appends,
@@ -284,7 +352,9 @@ rotation, JSON+HTML auditor pack (EU AI Act Art. 12/14), durable async Python an
 retries + idempotency + actor_chain/vocab helpers) with framework adapters for LangGraph/LangChain,
 CrewAI, AutoGen, OpenHands (Python) and LangChain.js + a generic `withLedger` wrapper (TS), tamper
 tests, incremental/rebuildable projections into all domain tables with a query API, cross-product
-incident review (JSON/HTML/Markdown).
+incident review (JSON/HTML/Markdown), auditor web UI with live replay timeline over SSE,
+in-browser record re-verification, RBAC (admin/auditor/viewer/writer), hashed API tokens, OIDC SSO
+with PKCE, sessions and CSRF protection.
 
 Not yet built (the "fully built version"):
 - Transparency-log anchoring (Sigstore Rekor). RFC 3161 N-of-M, scheduled git commits and
@@ -292,7 +362,9 @@ Not yet built (the "fully built version"):
 - KMS/HSM-held signing keys (file keyring with rotation is built).
 - Anchor receipts are not yet included in the auditor pack.
 - CrewAI, AutoGen and OpenHands adapters are tested against stubs only (LangChain is tested for real).
-- Live replay UI (timeline scrubbing); only JSON replay and a static HTML narrative exist.
+- UI: no pagination on goals/approvals lists; anchor status in the UI checks head consistency only
+  (receipt signatures are re-verified by `ledger verify --anchors`); no per-goal/per-chain access
+  scoping (roles are global); no SCIM/group-claim role mapping; open mode is decided at startup.
 - PDF rendering of the narrative (HTML only today; print-to-PDF works).
 - Projections: the query API loads the goal-filtered projection into memory per request (fine for
   thousands of rows per goal; no pagination on `/v1/goals` / `/v1/approvals` yet). Warrant calls
