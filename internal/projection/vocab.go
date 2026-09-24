@@ -444,7 +444,9 @@ func (m *mapper) mapType() bool {
 	case t == "gate.run.started":
 		m.attempt("gate:"+p.s("run_id"), nil, "gate", map[string]any{"tool": "gate", "repo": p["repo"], "base": p["base"], "head": p["head"]}, "", map[string]any{"repo": p["repo"], "base": p["base"], "head": p["head"], "files": p["files"]})
 	case t == "gate.stage.completed":
-		passed := !strings.EqualFold(p.s("status"), "fail") && !strings.EqualFold(p.s("status"), "error")
+		// A skipped stage did not run and must not be counted as a passed verification.
+		status := p.s("status")
+		passed := !strings.EqualFold(status, "fail") && !strings.EqualFold(status, "error") && !strings.EqualFold(status, "skip") && !strings.EqualFold(status, "skipped")
 		m.verification("gate:"+p.s("run_id"), "gate."+p.s("stage"), passed, map[string]any{"status": p["status"], "risk": p["risk"], "findings": p["findings"], "summary": p["summary"]})
 	case t == "gate.run.decided" || t == "gate.run.enforced":
 		dec := p.s("decision")
