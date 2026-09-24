@@ -21,6 +21,14 @@ func (m *memBackend) Append(_ context.Context, req store.AppendRequest) (*store.
 	if err := req.Validate(); err != nil {
 		return nil, err
 	}
+	if req.IdempotencyKey != "" {
+		for _, r := range m.recs {
+			if r.Chain == req.Chain && r.IdempotencyKey == req.IdempotencyKey {
+				existing := r
+				return &existing, nil
+			}
+		}
+	}
 	ac, _ := json.Marshal(req.ActorChain)
 	prev := ""
 	var seq int64 = 1
@@ -29,7 +37,7 @@ func (m *memBackend) Append(_ context.Context, req store.AppendRequest) (*store.
 			prev, seq = r.Hash, r.Seq+1
 		}
 	}
-	r := store.Record{ID: "id", Chain: req.Chain, Seq: seq, Type: req.Type, GoalID: req.GoalID, ActorChain: ac, Payload: req.Payload, CreatedAt: time.Now().UTC(), PrevHash: prev}
+	r := store.Record{ID: "id", Chain: req.Chain, Seq: seq, Type: req.Type, GoalID: req.GoalID, ActorChain: ac, Payload: req.Payload, CreatedAt: time.Now().UTC(), PrevHash: prev, IdempotencyKey: req.IdempotencyKey}
 	r.Hash, _ = store.ComputeHash(&r)
 	m.recs = append(m.recs, r)
 	return &r, nil
@@ -116,5 +124,36 @@ func TestAPIContract(t *testing.T) {
 	w = do(t, h, "GET", "/v1/export?goal_id=g1&format=html", "", "sekret")
 	if w.Code != 200 || !strings.Contains(w.Body.String(), "Article 14") {
 		t.Fatalf("export: %d", w.Code)
+	}
+}
+
+func TestAPIIdempotencyKey(t *testing.T) {
+	_, key, _ := ed25519.GenerateKey(nil)
+	h := (&Server{Store: &memBackend{}, Key: key}).Handler()
+	body := `{"chain":"bench","type":"bench.task.mined","actor_chain":[{"kind":"human","id":"alice"}],"payload":{"a":1},"idempotency_key":"retry-1"}`
+	w1 := do(t, h, "POST", "/v1/records", body, "")
+	if w1.Code != 201 {
+		t.Fatalf("first post: %d %s", w1.Code, w1.Body)
+	}
+	var r1, r2 AppendResponse
+	_ = json.Unmarshal(w1.Body.Bytes(), &r1)
+	w2 := do(t, h, "POST", "/v1/records", body, "")
+	if w2.Code != 201 {
+		t.Fatalf("retried post: %d %s", w2.Code, w2.Body)
+	}
+	_ = json.Unmarshal(w2.Body.Bytes(), &r2)
+	if r1.ID != r2.ID || r1.Seq != r2.Seq || r1.Hash != r2.Hash {
+		t.Fatalf("retry did not return the original record: %+v vs %+v", r1, r2)
+	}
+	w3 := do(t, h, "GET", "/v1/chains/bench/verify", "", "")
+	var v store.VerifyResult
+	_ = json.Unmarshal(w3.Body.Bytes(), &v)
+	if v.Length != 1 {
+		t.Fatalf("expected exactly one record appended, got length=%d", v.Length)
+	}
+	// A different idempotency_key on the same chain appends normally.
+	body2 := `{"chain":"bench","type":"bench.run.scored","actor_chain":[{"kind":"human","id":"alice"}],"payload":{},"idempotency_key":"retry-2"}`
+	if w := do(t, h, "POST", "/v1/records", body2, ""); w.Code != 201 {
+		t.Fatalf("distinct key post: %d %s", w.Code, w.Body)
 	}
 }

@@ -34,14 +34,17 @@ type Server struct {
 	Key   ed25519.PrivateKey
 }
 
-// AppendResponse is the 201 body of POST /v1/records.
+// AppendResponse is the 201 body of POST /v1/records. On a repeated idempotency_key it is the
+// original record's response, unchanged (the client can tell it was a replay by re-checking
+// idempotency_key/id against what it sent, but the response shape is identical either way).
 type AppendResponse struct {
-	ID        string `json:"id"`
-	Chain     string `json:"chain"`
-	Seq       int64  `json:"seq"`
-	Hash      string `json:"hash"`
-	PrevHash  string `json:"prev_hash"`
-	CreatedAt string `json:"created_at"`
+	ID             string `json:"id"`
+	Chain          string `json:"chain"`
+	Seq            int64  `json:"seq"`
+	Hash           string `json:"hash"`
+	PrevHash       string `json:"prev_hash"`
+	CreatedAt      string `json:"created_at"`
+	IdempotencyKey string `json:"idempotency_key,omitempty"`
 }
 
 // Handler returns the routed handler.
@@ -102,7 +105,7 @@ func (s *Server) postRecord(w http.ResponseWriter, r *http.Request) {
 		s.internal(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, AppendResponse{rec.ID, rec.Chain, rec.Seq, rec.Hash, rec.PrevHash, rec.CreatedAt.Format(time.RFC3339Nano)})
+	writeJSON(w, http.StatusCreated, AppendResponse{rec.ID, rec.Chain, rec.Seq, rec.Hash, rec.PrevHash, rec.CreatedAt.Format(time.RFC3339Nano), rec.IdempotencyKey})
 }
 
 func (s *Server) listRecords(w http.ResponseWriter, r *http.Request) {

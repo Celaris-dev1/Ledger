@@ -105,6 +105,47 @@ func TestAppendChainsAndVerifies(t *testing.T) {
 	}
 }
 
+func TestAppendIdempotencyKey(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	r1req := req("bench", "bench.task.mined", "g1", `{"n":1}`)
+	r1req.IdempotencyKey = "key-1"
+	r1, err := s.Append(ctx, r1req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Retry with the same key: same chain must return the original record, not append a new one.
+	r2req := req("bench", "bench.task.mined", "g1", `{"n":1}`)
+	r2req.IdempotencyKey = "key-1"
+	r2, err := s.Append(ctx, r2req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r2.ID != r1.ID || r2.Seq != r1.Seq || r2.Hash != r1.Hash {
+		t.Fatalf("retry did not return original record: %+v vs %+v", r1, r2)
+	}
+	res, err := s.Verify(ctx, "bench")
+	if err != nil || res.Length != 1 {
+		t.Fatalf("expected single record after retried append, got: %+v %v", res, err)
+	}
+	// A different key on the same chain appends normally.
+	r3req := req("bench", "bench.run.scored", "g1", `{"n":2}`)
+	r3req.IdempotencyKey = "key-2"
+	r3, err := s.Append(ctx, r3req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r3.Seq != 2 {
+		t.Fatalf("expected seq 2 for distinct key, got %d", r3.Seq)
+	}
+	// The same key on a different chain does not collide.
+	r4req := req("gate", "gate.run.started", "g2", `{}`)
+	r4req.IdempotencyKey = "key-1"
+	if _, err := s.Append(ctx, r4req); err != nil {
+		t.Fatalf("same key on different chain should not collide: %v", err)
+	}
+}
+
 func TestConcurrentAppendsSerialized(t *testing.T) {
 	s := testStore(t)
 	ctx := context.Background()
