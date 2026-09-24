@@ -58,7 +58,11 @@ func main() {
 		log.Printf("ledgerd: scheduled external anchoring disabled (set LEDGER_ANCHOR_INTERVAL or LEDGER_ANCHOR_EVERY and a backend)")
 	}
 	addr := env("LEDGER_ADDR", ":8410")
-	apiSrv := &api.Server{Store: st, Token: os.Getenv("LEDGER_TOKEN"), Key: key, Anchors: anchorSvc}
+	limits, err := api.LimitsFromEnv(os.Getenv)
+	if err != nil {
+		log.Fatalf("ledgerd: %v", err)
+	}
+	apiSrv := &api.Server{Store: st, Token: os.Getenv("LEDGER_TOKEN"), Key: key, Anchors: anchorSvc, Limits: limits}
 	// Compliance/ops: multi-tenancy (LEDGER_TOKENS), payload envelope encryption
 	// (LEDGER_DATA_KEY_DIR) and KMS/Vault root signing (LEDGER_SIGNER).
 	if spec := os.Getenv("LEDGER_TOKENS"); spec != "" {
@@ -130,6 +134,11 @@ func main() {
 		Addr:              addr,
 		Handler:           handler,
 		ReadHeaderTimeout: 10 * time.Second,
+		// Request bodies are small (LEDGER_MAX_BODY_BYTES); a slow-drip body can't hold a
+		// connection forever. No WriteTimeout: the SSE stream and large exports write for long.
+		ReadTimeout:    time.Minute,
+		IdleTimeout:    2 * time.Minute,
+		MaxHeaderBytes: 64 << 10,
 	}
 	go func() {
 		<-ctx.Done()

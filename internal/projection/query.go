@@ -138,13 +138,14 @@ type GoalTree struct {
 
 func approvalNodes(r *Rows, list []ApprovalRow) []ApprovalNode {
 	var out []ApprovalNode
+	// index decisions once: scanning all decisions per request was O(requests x decisions)
+	byKey := map[string][]DecisionRow{}
+	for _, d := range r.Decisions {
+		byKey[d.RequestKey] = append(byKey[d.RequestKey], d)
+	}
 	for _, a := range list {
 		n := ApprovalNode{ApprovalRow: a, Status: a.Status(), Evidence: ev(r, a.RecordID, a.DecisionRecordID), Decisions: []DecisionRow{}}
-		for _, d := range r.Decisions {
-			if d.RequestKey == a.RequestKey {
-				n.Decisions = append(n.Decisions, d)
-			}
-		}
+		n.Decisions = append(n.Decisions, byKey[a.RequestKey]...)
 		out = append(out, n)
 	}
 	return out
@@ -208,16 +209,23 @@ func BuildTree(r *Rows, goalID string) (*GoalTree, bool) {
 		}
 		return attempts[i].ID < attempts[j].ID
 	})
+	// index approvals by action hash once (per-attempt scans were O(attempts x approvals));
+	// order within a hash is preserved, so ApprovalStatusFor over the subset is unchanged.
+	rowsByHash, nodesByHash := map[string][]ApprovalRow{}, map[string][]ApprovalNode{}
+	for _, ap := range r.Approvals {
+		rowsByHash[ap.ActionHash] = append(rowsByHash[ap.ActionHash], ap)
+	}
+	for _, ap := range t.Approvals {
+		nodesByHash[ap.ActionHash] = append(nodesByHash[ap.ActionHash], ap)
+	}
 	for _, a := range attempts {
-		n := AttemptNode{AttemptRow: a, Approval: ApprovalStatusFor(r.Approvals, a.ActionHash), Verifications: attemptVer[a.ID],
+		n := AttemptNode{AttemptRow: a, Approval: ApprovalStatusFor(rowsByHash[a.ActionHash], a.ActionHash), Verifications: attemptVer[a.ID],
 			Evidence: ev(r, a.RecordID, a.ResultRecordID), Approvals: []ApprovalNode{}}
 		if n.Verifications == nil {
 			n.Verifications = []VerificationNode{}
 		}
-		for _, ap := range t.Approvals {
-			if ap.ActionHash == a.ActionHash && a.ActionHash != "" {
-				n.Approvals = append(n.Approvals, ap)
-			}
+		if a.ActionHash != "" {
+			n.Approvals = append(n.Approvals, nodesByHash[a.ActionHash]...)
 		}
 		if i, ok := stepIdx[a.StepID]; ok && a.StepID != "" {
 			t.Steps[i].Attempts = append(t.Steps[i].Attempts, n)

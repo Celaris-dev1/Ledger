@@ -46,12 +46,16 @@ ledger anchor --dir anchors         # anchors/<chain>/<seq>.json + latest.json, 
 | `LEDGER_TOKENS` | unset | multi-tenancy: `token=tenant,...` (`*` = operator); replaces `LEDGER_TOKEN` |
 | `LEDGER_DATA_KEY_DIR` | unset | per-subject data keys: enables `data_subject` payload encryption and `ledger erase` |
 | `LEDGER_SIGNER` | `file` | `file`, `vault` or `awskms` root/document signer (see "Key management") |
+| `LEDGER_MAX_BODY_BYTES` | `4194304` | largest `POST /v1/records` body (413 beyond) |
+| `LEDGER_MAX_PAGE` | `1000` | default and maximum page of `GET /v1/goals` and `GET /v1/approvals` (`?limit=&after=`, response `next_after`) |
+| `LEDGER_MAX_EXPORT_RECORDS` | `200000` | largest `GET /v1/export` / replay response (413 beyond; page `GET /v1/records` or use `ledger backup`) |
+| `LEDGER_REQUEST_TIMEOUT` | `2m` | per-request deadline for `/v1` API calls |
 
 ## HTTP API
 
 | Method | Path | Notes |
 |---|---|---|
-| POST | `/v1/records` | body `{chain,type,goal_id?,actor_chain[],policy_version?,payload,idempotency_key?}` → 201 `{id,chain,seq,hash,prev_hash,created_at,idempotency_key?}`. `actor_chain` must be non-empty and start with `kind:"human"` (400 otherwise). `idempotency_key`, when set, is unique per `chain`: a retry with the same `(chain, idempotency_key)` returns the original record's response instead of appending a duplicate. |
+| POST | `/v1/records` | body `{chain,type,goal_id?,actor_chain[],policy_version?,payload,idempotency_key?}` → 201 `{id,chain,seq,hash,prev_hash,created_at,idempotency_key?}`. `actor_chain` must be non-empty (at most 64 hops) and start with `kind:"human"`; `payload` must be a JSON object; names (`chain`, `goal_id`, `idempotency_key`, actor ids) are at most 512 bytes, `type`/`policy_version` 256, and no field may contain NUL (400 otherwise). `idempotency_key`, when set, is unique per `chain`: a retry with the same `(chain, idempotency_key)` returns the original record's response instead of appending a duplicate. |
 | GET | `/v1/records?chain=&goal_id=&after_seq=&limit=` | → `{"records":[...]}` (limit default 100, max 1000) |
 | GET | `/v1/chains/{chain}/verify` | → `{chain,ok,length,head,broken_at}` (+ `reason` when broken) |
 | GET | `/v1/goals/{goal_id}/replay` | → `{"goal_id":..,"records":[...]}` ordered by time across chains |
