@@ -138,7 +138,7 @@ func TestConformanceVectors(t *testing.T) {
 	write("valid/warrant-decision.json", env2)
 
 	bad1 := env1
-	bad1.Signature = flipLastByte(env1.Signature)
+	bad1.Signature = flipMiddleByte(env1.Signature)
 	write("invalid/bad-signature.json", bad1)
 
 	bad2 := env1
@@ -191,15 +191,20 @@ func assertVector(t *testing.T, path string, pub ed25519.PublicKey, wantOK bool)
 	}
 }
 
-func flipLastByte(s string) string {
+// flipMiddleByte corrupts one base64 data character (not the last one or two, which may be
+// '=' padding that some base64 decoders — notably Node's Buffer.from — silently tolerate or
+// reinterpret, which would make a "corrupted" fixture still decode to the original valid
+// signature bytes on those decoders).
+func flipMiddleByte(s string) string {
 	b := []byte(s)
-	if len(b) == 0 {
+	if len(b) < 4 {
 		return s
 	}
-	if b[len(b)-1] == 'A' {
-		b[len(b)-1] = 'B'
+	i := len(b) / 2
+	if b[i] == 'A' {
+		b[i] = 'B'
 	} else {
-		b[len(b)-1] = 'A'
+		b[i] = 'A'
 	}
 	return string(b)
 }
