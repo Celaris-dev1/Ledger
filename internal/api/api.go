@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/Celaris-dev1/Ledger/internal/anchor"
+	"github.com/Celaris-dev1/Ledger/internal/auth"
 	"github.com/Celaris-dev1/Ledger/internal/export"
 	"github.com/Celaris-dev1/Ledger/internal/projection"
 	"github.com/Celaris-dev1/Ledger/internal/store"
@@ -40,6 +41,9 @@ type Server struct {
 	// OnAppend, if set, is called after every successful append (must not block;
 	// ledgerd uses it to kick the async projector).
 	OnAppend func(*store.Record)
+	// Auth, when set, enforces role-based access per route (see internal/auth). When nil the
+	// legacy single-Token check applies to every route, exactly as before.
+	Auth *auth.Authenticator
 }
 
 // AnchorSource lists (and optionally re-verifies) external anchor receipts of a chain.
@@ -64,15 +68,23 @@ type AppendResponse struct {
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, map[string]bool{"ok": true}) })
-	mux.HandleFunc("POST /v1/records", s.auth(s.postRecord))
-	mux.HandleFunc("GET /v1/records", s.auth(s.listRecords))
-	mux.HandleFunc("GET /v1/chains/{chain}/verify", s.auth(s.verify))
-	mux.HandleFunc("GET /v1/chains/{chain}/root", s.auth(s.root))
-	mux.HandleFunc("GET /v1/chains/{chain}/anchors", s.auth(s.anchors))
-	mux.HandleFunc("GET /v1/goals/{goal_id}/replay", s.auth(s.replay))
-	mux.HandleFunc("GET /v1/export", s.auth(s.export))
+	mux.HandleFunc("POST /v1/records", s.guard(auth.PermAppend, s.postRecord))
+	mux.HandleFunc("GET /v1/records", s.guard(auth.PermRead, s.listRecords))
+	mux.HandleFunc("GET /v1/chains/{chain}/verify", s.guard(auth.PermRead, s.verify))
+	mux.HandleFunc("GET /v1/chains/{chain}/root", s.guard(auth.PermRead, s.root))
+	mux.HandleFunc("GET /v1/chains/{chain}/anchors", s.guard(auth.PermView, s.anchors))
+	mux.HandleFunc("GET /v1/goals/{goal_id}/replay", s.guard(auth.PermRead, s.replay))
+	mux.HandleFunc("GET /v1/export", s.guard(auth.PermExport, s.export))
 	s.registerProjections(mux)
 	return mux
+}
+
+// guard applies RBAC when s.Auth is set, else the legacy shared-token check.
+func (s *Server) guard(p auth.Perm, next http.HandlerFunc) http.HandlerFunc {
+	if s.Auth != nil {
+		return s.Auth.Require(p, true, next)
+	}
+	return s.auth(next)
 }
 
 func (s *Server) auth(next http.HandlerFunc) http.HandlerFunc {

@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 
+	"github.com/Celaris-dev1/Ledger/internal/auth"
 	"github.com/Celaris-dev1/Ledger/internal/incident"
 	"github.com/Celaris-dev1/Ledger/internal/projection"
 )
@@ -16,12 +17,12 @@ import (
 //	GET /v1/incidents/{goal_id}?format=json|html|md
 //	GET /v1/projections/vocabulary      the ledger.* payload convention and product mappings
 func (s *Server) registerProjections(mux *http.ServeMux) {
-	mux.HandleFunc("GET /v1/goals", s.auth(s.listGoals))
-	mux.HandleFunc("GET /v1/goals/{goal_id}", s.auth(s.goalTree))
-	mux.HandleFunc("GET /v1/approvals", s.auth(s.approvals))
-	mux.HandleFunc("GET /v1/budgets/{goal_id}", s.auth(s.budgets))
-	mux.HandleFunc("GET /v1/incidents/{goal_id}", s.auth(s.incident))
-	mux.HandleFunc("GET /v1/projections/vocabulary", s.auth(func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("GET /v1/goals", s.guard(auth.PermView, s.listGoals))
+	mux.HandleFunc("GET /v1/goals/{goal_id}", s.guard(auth.PermView, s.goalTree))
+	mux.HandleFunc("GET /v1/approvals", s.guard(auth.PermView, s.approvals))
+	mux.HandleFunc("GET /v1/budgets/{goal_id}", s.guard(auth.PermView, s.budgets))
+	mux.HandleFunc("GET /v1/incidents/{goal_id}", s.guard(auth.PermView, s.incident))
+	mux.HandleFunc("GET /v1/projections/vocabulary", s.guard(auth.PermView, func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, 200, map[string]any{"version": projection.Version, "vocabulary": projection.Vocabulary, "product_mappings": projection.ProductMappings})
 	}))
 }
@@ -101,7 +102,12 @@ func (s *Server) incident(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "no records for goal")
 		return
 	}
-	switch r.URL.Query().Get("format") {
+	format := r.URL.Query().Get("format")
+	if p := auth.FromContext(r.Context()); p != nil && format != "" && format != "json" && !p.Can(auth.PermExport) {
+		writeErr(w, http.StatusForbidden, "role "+p.Role+" may not export")
+		return
+	}
+	switch format {
 	case "html":
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'")

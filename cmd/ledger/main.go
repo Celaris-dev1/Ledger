@@ -38,6 +38,8 @@ usage:
                                          --rebuild starts from scratch; --check verifies rebuild == stored
   ledger incident --goal ID [--format json|html|md] [--out FILE]
                                          cross-product incident review for a goal (stdout by default)
+  ledger token create --name NAME [--role writer|viewer|auditor|admin] | list | revoke ID
+                                         manage API tokens (stored hashed; plaintext printed once)
 
 env: LEDGER_DATABASE_URL, LEDGER_SIGNING_KEY (base64 seed) or LEDGER_KEY_FILE, LEDGER_KEYRING_DIR,
      LEDGER_ANCHOR_DIR, LEDGER_TSA_URLS, LEDGER_TSA_TRUST, LEDGER_TSA_QUORUM, LEDGER_ANCHOR_GIT_REMOTE,
@@ -82,12 +84,14 @@ func main() {
 	rebuild := fs.Bool("rebuild", false, "project: rebuild from scratch")
 	check := fs.Bool("check", false, "project: verify stored projection == rebuild")
 	format := fs.String("format", "json", "incident: json|html|md")
+	tokName := fs.String("name", "", "token create: token name")
+	tokRole := fs.String("role", "writer", "token create: role (writer|viewer|auditor|admin)")
 	switch cmd {
 	case "verify", "replay", "export", "anchor", "project", "incident":
 		_ = fs.Parse(args)
-	case "keys":
+	case "keys", "token":
 		if len(args) == 0 {
-			die("keys requires list|rotate")
+			die("%s requires a subcommand", cmd)
 		}
 		sub = args[0]
 		_ = fs.Parse(args[1:])
@@ -104,6 +108,10 @@ func main() {
 		die("database: %v", err)
 	}
 	defer st.Close()
+	if cmd == "token" {
+		runToken(ctx, st, sub, *tokName, *tokRole, fs.Args())
+		return
+	}
 	// verify/replay never create a key file; verify --anchors reads the keyring (trusted keys) if configured.
 	var key ed25519.PrivateKey
 	var keyring *anchor.Keyring
