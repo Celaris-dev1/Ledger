@@ -23,8 +23,7 @@
 #
 # Usage: scripts/stack-demo.sh [--root DIR]
 #   --root DIR   directory holding the sibling Gate, Warrant, Harbour-, Proof checkouts
-#                (default: LEDGER_XPRODUCT_ROOT, else this script's own worktrees layout
-#                /home/user/wt, else the directory next to this repo)
+#                (default: LEDGER_XPRODUCT_ROOT, else the directory next to this repo)
 #
 # Requires: go 1.24+, psql, git, python3, node, npm (same as scripts/e2e.sh) and a reachable
 # Postgres at LEDGER_TEST_DATABASE_URL (default postgres://postgres:postgres@localhost:5432/ledger?sslmode=disable).
@@ -43,7 +42,7 @@ while [ $# -gt 0 ]; do
   esac
 done
 if [ -z "$ROOT" ]; then
-  for candidate in /home/user/wt "$(dirname "$REPO_ROOT")"; do
+  for candidate in "$(dirname "$REPO_ROOT")"; do
     if [ -d "$candidate/Warrant" ] && [ -d "$candidate/Gate" ]; then
       ROOT="$candidate"
       break

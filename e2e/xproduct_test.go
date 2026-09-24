@@ -3,6 +3,7 @@
 package e2e
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -101,10 +102,17 @@ func startProc(t *testing.T, name, bin string, args, env []string, dir, health s
 
 func runCmd(t *testing.T, dir string, env []string, name string, args ...string) (string, int) {
 	t.Helper()
-	c := exec.Command(name, args...)
+	// A bounded run: a sibling binary too old to know a subcommand may fall
+	// through to serving forever instead of exiting.
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	c := exec.CommandContext(ctx, name, args...)
 	c.Dir = dir
 	c.Env = append(os.Environ(), env...)
 	out, err := c.CombinedOutput()
+	if ctx.Err() != nil {
+		t.Fatalf("%s %v: timed out after 2m (is the sibling checkout up to date?)\n%s", name, args, out)
+	}
 	code := 0
 	if ee, ok := err.(*exec.ExitError); ok {
 		code = ee.ExitCode()
