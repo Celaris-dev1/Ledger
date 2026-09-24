@@ -100,10 +100,10 @@ type TSA struct {
 
 	mu sync.Mutex
 	// Mutators for negative tests.
-	Reject       bool                     // return status rejection (2)
-	WrongImprint bool                     // stamp a different digest
-	TamperTST    bool                     // flip a byte of the TSTInfo after signing
-	Now          func() time.Time         // genTime source
+	Reject       bool             // return status rejection (2)
+	WrongImprint bool             // stamp a different digest
+	TamperTST    bool             // flip a byte of the TSTInfo after signing
+	Now          func() time.Time // genTime source
 	Requests     int
 	Hook         func(resp []byte) []byte // arbitrary post-processing of the DER response
 }

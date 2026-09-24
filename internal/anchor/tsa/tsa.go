@@ -57,7 +57,6 @@ func hashForOID(o asn1.ObjectIdentifier) (crypto.Hash, bool) {
 	return 0, false
 }
 
-
 // AlgorithmIdentifier is the X.509 AlgorithmIdentifier.
 type AlgorithmIdentifier struct {
 	Algorithm  asn1.ObjectIdentifier
