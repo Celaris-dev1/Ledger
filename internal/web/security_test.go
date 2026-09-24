@@ -25,8 +25,9 @@ func TestTenancyNeverOpen(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if open, err := c.ResolveOpen(context.Background(), auth.NewMemory()); err == nil || open {
-		t.Fatalf("LEDGER_AUTH=off with tenancy: open=%v err=%v; want refusal", open, err)
+	// LEDGER_AUTH=off is ignored (with a warning) once tenancy is on: never open.
+	if open, err := c.ResolveOpen(context.Background(), auth.NewMemory()); err != nil || open {
+		t.Fatalf("LEDGER_AUTH=off with tenancy: open=%v err=%v; want closed", open, err)
 	}
 	// unchanged without tenancy
 	c, _ = ConfigFromEnv(env(map[string]string{}))
