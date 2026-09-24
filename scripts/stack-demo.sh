@@ -2,7 +2,9 @@
 # stack-demo.sh: runs one real, small goal across Warrant, Harbour, Gate and Proof (built as
 # real binaries from their worktrees/checkouts next to this one, via `go build` — never `go
 # run`), talking to a real Ledger server, then renders the cross-product incident report for
-# that goal and asserts the chain of custody is complete and every source chain verifies.
+# that goal and asserts the chain of custody is complete, every source chain verifies, and every
+# stack-receipt/v1 envelope on the goal is trusted:true (its signer_key_id was enrolled with
+# Ledger before the product that signed it ran).
 #
 # This drives the existing cross-product harness in e2e/xproduct_test.go (which already builds
 # and runs Warrant, Harbour-, Gate and Proof as subprocess daemons against a real ledgerd and a
@@ -11,6 +13,13 @@
 # and duplicating it here would drift out of sync with it. This script's job is: build, drive
 # it, dump the resulting incident report, and assert on it as a *demo* artifact (HTML you can
 # open), independent of `go test` passing/failing as a unit test.
+#
+# Key enrollment: e2e/xproduct_test.go runs each product's `keys show` (`keys receipt-show` for
+# Proof) with a per-run temp key file (that product's *_RECEIPT_KEY_FILE env var, or PROOF_KEY_DIR
+# for Proof — pass one in to reuse a specific key across runs; otherwise a fresh one is used each
+# time, so the demo is hermetic) and enrolls the key it prints via `ledger keys enroll`, using the
+# *same* env when it then starts that product's real process — so the receipts it signs verify
+# against exactly the key Ledger trusts.
 #
 # Usage: scripts/stack-demo.sh [--root DIR]
 #   --root DIR   directory holding the sibling Gate, Warrant, Harbour-, Proof checkouts
@@ -124,24 +133,24 @@ if s.get("denials", 0) < 1:
 if s.get("effects_committed", 0) < 1:
     errs.append("expected at least one committed effect (Harbour ran something)")
 receipts = rep.get("receipts") or []
-if receipts:
-    # "signature_ok" false because no trust store was configured for this run (LEDGER_KEYRING_DIR
-    # unset -- each product here signs with its own throwaway per-process key, and nothing
-    # enrolls that key into a keyring Ledger trusts) is a configuration gap to flag, not a
-    # correctness failure: it means "unverified", not "verified wrong". A receipt whose
-    # signature genuinely fails against a *configured* key is the real failure this checks for.
-    genuinely_failed = [r for r in receipts if not r.get("signature_ok") and r.get("trusted")]
-    unverified = [r for r in receipts if not r.get("signature_ok") and not r.get("trusted")]
-    if genuinely_failed:
-        errs.append(f"{len(genuinely_failed)}/{len(receipts)} stack-receipts FAILED signature verification against a trusted key: {genuinely_failed}")
-    print(f"stack-demo: {len(receipts)} stack-receipt(s) found "
-          f"({len(receipts) - len(unverified) - len(genuinely_failed)} verified, {len(unverified)} unverified: no trust store, {len(genuinely_failed)} failed)")
-    if unverified:
-        print("stack-demo: NOTE — set LEDGER_KEYRING_DIR and enroll each product's signer_key_id "
-              "to verify receipt signatures in this demo (gap: no cross-product key enrollment yet)")
+if not receipts:
+    errs.append("no stack-receipt/v1 envelopes found on this goal's records "
+                "(products emit them at their existing ledger.Append call sites; see docs/receipt-spec.md)")
 else:
-    print("stack-demo: NOTE — no stack-receipt/v1 envelopes found on this goal's records yet "
-          "(products emit them at their existing ledger.Append call sites; see docs/receipt-spec.md)")
+    # e2e/xproduct_test.go now enrolls every product's receipt-signing key with Ledger
+    # (`ledger keys enroll`, via each product's `keys show`/`keys receipt-show`) into the same
+    # per-run schema the scenario's ledgerd uses, before it starts each product's process — so
+    # every stack-receipt on this goal is expected to verify AND be trusted, not just verify.
+    untrusted = [r for r in receipts if not r.get("trusted")]
+    unverified = [r for r in receipts if not r.get("signature_ok")]
+    if untrusted:
+        errs.append(f"{len(untrusted)}/{len(receipts)} stack-receipts are NOT trusted "
+                     f"(signer_key_id not enrolled, or revoked): {untrusted}")
+    if unverified:
+        errs.append(f"{len(unverified)}/{len(receipts)} stack-receipts FAILED signature verification: {unverified}")
+    if not untrusted and not unverified:
+        print(f"stack-demo: {len(receipts)} stack-receipt(s) found, all verified and trusted "
+              f"(products: {sorted({r.get('product') for r in receipts})})")
 if errs:
     print("stack-demo: FAIL")
     for e in errs:
