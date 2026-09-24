@@ -14,6 +14,7 @@ import (
 
 	"github.com/Celaris-dev1/Ledger/internal/anchor"
 	"github.com/Celaris-dev1/Ledger/internal/export"
+	"github.com/Celaris-dev1/Ledger/internal/projection"
 	"github.com/Celaris-dev1/Ledger/internal/store"
 )
 
@@ -32,6 +33,11 @@ type Server struct {
 	Store Backend
 	Token string
 	Key   ed25519.PrivateKey
+	// Projections serves the projection query API (nil → 503 on those routes).
+	Projections projection.Reader
+	// OnAppend, if set, is called after every successful append (must not block;
+	// ledgerd uses it to kick the async projector).
+	OnAppend func(*store.Record)
 }
 
 // AppendResponse is the 201 body of POST /v1/records.
@@ -54,6 +60,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/chains/{chain}/root", s.auth(s.root))
 	mux.HandleFunc("GET /v1/goals/{goal_id}/replay", s.auth(s.replay))
 	mux.HandleFunc("GET /v1/export", s.auth(s.export))
+	s.registerProjections(mux)
 	return mux
 }
 
@@ -101,6 +108,9 @@ func (s *Server) postRecord(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		s.internal(w, err)
 		return
+	}
+	if s.OnAppend != nil {
+		s.OnAppend(rec)
 	}
 	writeJSON(w, http.StatusCreated, AppendResponse{rec.ID, rec.Chain, rec.Seq, rec.Hash, rec.PrevHash, rec.CreatedAt.Format(time.RFC3339Nano)})
 }

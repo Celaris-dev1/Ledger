@@ -24,6 +24,10 @@ usage:
                                          write pack.json + narrative.html (EU AI Act Art. 12/14)
   ledger anchor [--chain NAME] [--dir DIR]
                                          sign current chain root(s) with Ed25519 and write to DIR
+  ledger project [--rebuild] [--check]   project new records into the domain tables (per-chain cursors);
+                                         --rebuild starts from scratch; --check verifies rebuild == stored
+  ledger incident --goal ID [--format json|html|md] [--out FILE]
+                                         cross-product incident review for a goal (stdout by default)
 
 env: LEDGER_DATABASE_URL, LEDGER_SIGNING_KEY (base64 seed) or LEDGER_KEY_FILE, LEDGER_ANCHOR_DIR
 `
@@ -57,8 +61,11 @@ func main() {
 	goal := fs.String("goal", "", "goal id")
 	out := fs.String("out", "auditor-pack", "output directory for export")
 	dir := fs.String("dir", env("LEDGER_ANCHOR_DIR", "anchors"), "anchor output directory")
+	rebuild := fs.Bool("rebuild", false, "project: rebuild from scratch")
+	check := fs.Bool("check", false, "project: verify stored projection == rebuild")
+	format := fs.String("format", "json", "incident: json|html|md")
 	switch cmd {
-	case "verify", "replay", "export", "anchor":
+	case "verify", "replay", "export", "anchor", "project", "incident":
 		_ = fs.Parse(args)
 	case "-h", "--help", "help":
 		fmt.Print(usage)
@@ -138,6 +145,16 @@ func main() {
 		}
 		f.Close()
 		fmt.Printf("wrote %s/pack.json and %s/narrative.html (%d records, intact=%v)\n", *out, *out, p.Summary.TotalRecords, p.Summary.AllChainsIntact)
+	case "project":
+		runProject(ctx, st, *rebuild, *check)
+	case "incident":
+		outFile := ""
+		fs.Visit(func(f *flag.Flag) {
+			if f.Name == "out" {
+				outFile = *out
+			}
+		})
+		runIncident(ctx, st, *goal, *format, outFile)
 	case "anchor":
 		key, err := anchor.LoadKey(os.Getenv("LEDGER_SIGNING_KEY"), env("LEDGER_KEY_FILE", "ledger_ed25519.key"))
 		if err != nil {

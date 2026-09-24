@@ -13,6 +13,7 @@ import (
 
 	"github.com/Celaris-dev1/Ledger/internal/anchor"
 	"github.com/Celaris-dev1/Ledger/internal/api"
+	"github.com/Celaris-dev1/Ledger/internal/projection"
 	"github.com/Celaris-dev1/Ledger/internal/store"
 )
 
@@ -37,9 +38,19 @@ func main() {
 		log.Fatalf("ledgerd: signing key: %v", err)
 	}
 	addr := env("LEDGER_ADDR", ":8410")
+	apiSrv := &api.Server{Store: st, Token: os.Getenv("LEDGER_TOKEN"), Key: key}
+	// Projections: async, bounded (one coalesced pending run) catch-up after each
+	// append plus a periodic sweep. LEDGER_PROJECTIONS=off disables them.
+	if os.Getenv("LEDGER_PROJECTIONS") != "off" {
+		proj := &projection.PG{Pool: st.Pool}
+		worker := projection.NewWorker(proj)
+		go worker.Run(ctx)
+		apiSrv.Projections = proj
+		apiSrv.OnAppend = func(*store.Record) { worker.Notify() }
+	}
 	srv := &http.Server{
 		Addr:              addr,
-		Handler:           (&api.Server{Store: st, Token: os.Getenv("LEDGER_TOKEN"), Key: key}).Handler(),
+		Handler:           apiSrv.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	go func() {
