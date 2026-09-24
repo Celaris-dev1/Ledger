@@ -1,0 +1,74 @@
+{
+  "goals": [
+    {
+      "id": "task-1",
+      "originating_human_id": "carol",
+      "status": "open",
+      "first_record_id": "a7806551-af61-2a87-9a5d-ad7a42aa8d8b"
+    }
+  ],
+  "goal_steps": null,
+  "action_attempts": null,
+  "verification_results": [
+    {
+      "id": "119dff8b-5553-57b9-8b55-baaf17f27c95",
+      "goal_id": "task-1",
+      "verifier": "bench",
+      "passed": false,
+      "evidence": {
+        "failure_mode": "tests",
+        "risk_score": null,
+        "run_id": "br-1",
+        "task_id": "task-1"
+      },
+      "record_id": "a7119999-ef96-8b30-8cff-c193762a30d6"
+    }
+  ],
+  "approval_requests": null,
+  "approval_decisions": null,
+  "budget_ledger": null,
+  "identity_facts": null,
+  "memory_items": [
+    {
+      "id": "3cda5ac8-d281-52c0-9dbb-35809058355d",
+      "goal_id": "task-1",
+      "operator_id": "bench",
+      "key": "bench.task.task-1",
+      "value": {
+        "commit": "c1",
+        "repo": "acme/api",
+        "task_id": "task-1"
+      },
+      "record_id": "a7806551-af61-2a87-9a5d-ad7a42aa8d8b"
+    }
+  ],
+  "tools": null,
+  "operators": [
+    {
+      "id": "agent-b",
+      "kind": "agent"
+    },
+    {
+      "id": "bench",
+      "kind": "service"
+    },
+    {
+      "id": "carol",
+      "kind": "human"
+    }
+  ],
+  "evidence": {
+    "a7119999-ef96-8b30-8cff-c193762a30d6": {
+      "chain": "bench",
+      "seq": 2,
+      "type": "bench.run.scored",
+      "hash": "de4c36a9f1d4a8c5dbc507f70217a4fa4f5550b9102ec341668deb7f3843b7ce"
+    },
+    "a7806551-af61-2a87-9a5d-ad7a42aa8d8b": {
+      "chain": "bench",
+      "seq": 1,
+      "type": "bench.task.mined",
+      "hash": "4c810321a7803af98626b0fdd61f09df50fb1d682bbdeaa1115ec71eeb6b8305"
+    }
+  }
+}

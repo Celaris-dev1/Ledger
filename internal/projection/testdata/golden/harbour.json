@@ -1,0 +1,119 @@
+{
+  "goals": [
+    {
+      "id": "g-h",
+      "title": "nightly",
+      "originating_human_id": "alice",
+      "status": "paused",
+      "first_record_id": "e1848baa-50ff-dd8c-9fac-ff3ea77e85e7"
+    }
+  ],
+  "goal_steps": [
+    {
+      "id": "2561c4c1-e2be-550b-94da-70df7b95177e",
+      "goal_id": "g-h",
+      "step_no": 1,
+      "description": "email.send",
+      "status": "done",
+      "record_id": "fda3a6b9-b5c4-0746-47ce-281dc4181216"
+    },
+    {
+      "id": "84461063-d12d-5c88-b90f-9518a11c8c0f",
+      "goal_id": "g-h",
+      "step_no": 2,
+      "description": "db.write",
+      "status": "planned",
+      "record_id": "fb1eb915-4aff-659f-fb6f-b92e40fb73fe"
+    }
+  ],
+  "action_attempts": [
+    {
+      "id": "0a183df6-d5b5-51cb-aaf5-c26ba8f3bcfb",
+      "attempt_key": "harbour:g-h:8",
+      "goal_id": "g-h",
+      "step_id": "84461063-d12d-5c88-b90f-9518a11c8c0f",
+      "tool_id": "db.write",
+      "action_hash": "2c9e8308f2c853d32ec20804ce8665115653d493c0c7a1e6ac192f312f62d377",
+      "arguments": {
+        "row": 1
+      },
+      "record_id": "fb1eb915-4aff-659f-fb6f-b92e40fb73fe"
+    },
+    {
+      "id": "911ec44a-58c1-52d0-b221-ca0ec9195370",
+      "attempt_key": "harbour:g-h:7",
+      "goal_id": "g-h",
+      "step_id": "2561c4c1-e2be-550b-94da-70df7b95177e",
+      "tool_id": "email.send",
+      "action_hash": "073c2dc8bcd96311d7f41a5e2be17f0f81c1824fcf92a90d4b664de2060b3275",
+      "arguments": {
+        "to": "x@example.com"
+      },
+      "outcome": "committed",
+      "record_id": "fda3a6b9-b5c4-0746-47ce-281dc4181216",
+      "result_record_id": "cc9921bd-c900-2789-3a56-b0f7b371f93e"
+    }
+  ],
+  "verification_results": null,
+  "approval_requests": null,
+  "approval_decisions": null,
+  "budget_ledger": null,
+  "identity_facts": null,
+  "memory_items": null,
+  "tools": [
+    {
+      "id": "db.write",
+      "name": "db.write"
+    },
+    {
+      "id": "email.send",
+      "name": "email.send"
+    }
+  ],
+  "operators": [
+    {
+      "id": "agent-h",
+      "kind": "agent"
+    },
+    {
+      "id": "alice",
+      "kind": "human"
+    },
+    {
+      "id": "w1",
+      "kind": "service"
+    }
+  ],
+  "evidence": {
+    "cc9921bd-c900-2789-3a56-b0f7b371f93e": {
+      "chain": "harbour",
+      "seq": 3,
+      "type": "harbour.effect.result",
+      "hash": "087e0e749aafa8ed25c9b1452109d4f94397c83dce254855f9966c5ef92ef9b8"
+    },
+    "d4d27031-ebd5-bcfc-ec68-d62199495f81": {
+      "chain": "harbour",
+      "seq": 5,
+      "type": "harbour.goal.transition",
+      "hash": "88a4e0ccb86d2004d68d905a7c3ddd1ea00198435f1278344aee169a70ede231"
+    },
+    "e1848baa-50ff-dd8c-9fac-ff3ea77e85e7": {
+      "chain": "harbour",
+      "seq": 1,
+      "type": "harbour.goal.transition",
+      "hash": "bb3ab7ad6585a70d1465a5f5cd80204e09c4a295a12aaba64b6819c190b5063d"
+    },
+    "fb1eb915-4aff-659f-fb6f-b92e40fb73fe": {
+      "chain": "harbour",
+      "seq": 4,
+      "type": "harbour.effect.intent",
+      "hash": "939409e987284d74385723272e32d602b96b041103592871a80f27b11aaa26c5"
+    },
+    "fda3a6b9-b5c4-0746-47ce-281dc4181216": {
+      "chain": "harbour",
+      "seq": 2,
+      "type": "harbour.effect.intent",
+      "hash": "f60a417c21fabf18fc5d13d729c9e5d6a0dae990972188d84c86fb8fda51821f"
+    }
+  }
+}
