@@ -50,7 +50,7 @@ usage:
                                          manage API tokens (stored hashed; plaintext printed once)
   ledger license show [--json] | verify <token|file>
                                          current/verify an Enterprise license (see LICENSING in README)
-` + verifyReceiptUsage + `
+` + bundleUsage + verifyReceiptUsage + `
 
 env: LEDGER_DATABASE_URL, LEDGER_SIGNING_KEY (base64 seed) or LEDGER_KEY_FILE, LEDGER_KEYRING_DIR,
      LEDGER_ANCHOR_DIR, LEDGER_TSA_URLS, LEDGER_TSA_TRUST, LEDGER_TSA_QUORUM, LEDGER_ANCHOR_GIT_REMOTE,
@@ -82,6 +82,10 @@ func main() {
 	cmd, args := os.Args[1], os.Args[2:]
 	if cmd == "verify-receipt" {
 		runVerifyReceipt(args)
+		return
+	}
+	if cmd == "bundle" {
+		runBundle(args)
 		return
 	}
 	if cmd == "license" {
