@@ -198,6 +198,38 @@ Rekor accepts, and meaningful offline verification needs Rekor's public key plus
 entry timestamp and Merkle inclusion proof. That is feasible with the stdlib but was left out to
 keep this change reviewable; the `Backend` interface is where it would plug in.
 
+## Offline verifier bundles ("Forge It")
+
+`ledger bundle (--chain NAME | --goal ID) --out bundle.tar` packages a chain's records, signed
+roots, external anchor receipts (including RFC 3161 tokens), and the public keys needed to check
+all of it into one self-contained, gzip-compressed tar archive (`internal/bundle`). It needs the
+same database access as the rest of the CLI to *produce* the bundle, but nothing that reads the
+bundle afterwards does: `cmd/ledger-verify` is a standalone binary that opens no database
+connection and makes no network call.
+
+```sh
+ledger bundle --chain gate --out gate.tar
+go build -o ledger-verify ./cmd/ledger-verify
+./ledger-verify gate.tar          # human summary; exit 1 on any failure
+./ledger-verify --json gate.tar   # same, as JSON
+```
+
+It checks exactly what `ledger verify --anchors` checks online (`internal/anchoring.VerifyChain`,
+shared code): the hash chain is intact, every root signature verifies against a trusted key
+(`trust.json`, if the bundle carries one — otherwise a `self-signed` bundle checks each root
+against only its own embedded key, and says so), every RFC 3161 token verifies against the
+embedded `tsa_roots.pem`, and every anchored `(seq, head)` is still a prefix of the bundled
+records. On failure it names the exact record/seq and reason (e.g. `hash chain broken at seq 4:
+stored hash does not match recomputed hash`).
+
+**Forge It.** [docs/forge-it.md](docs/forge-it.md) is a standing public challenge: take the
+published sample bundle, tamper with it any way you like, and see if `ledger-verify` still says
+OK. Regenerate the (deterministic, key-free) sample with `scripts/forge-it-sample.sh`.
+
+Tamper-matrix tests live in `internal/bundle/bundle_test.go` (modify payload, modify hash, delete,
+reorder, insert, swap the root signature, swap the trusted key, truncate the tail), plus
+`FuzzRead` for the bundle parser itself (`internal/bundle/fuzz_test.go`).
+
 ## SDKs
 
 - Python (`sdk/python`, stdlib only): `Ledger(chain).record(type, payload, actor_chain, goal_id=, policy_version=)`
