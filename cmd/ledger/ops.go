@@ -21,6 +21,7 @@ import (
 	"github.com/Celaris-dev1/Ledger/internal/bench"
 	"github.com/Celaris-dev1/Ledger/internal/compliance"
 	"github.com/Celaris-dev1/Ledger/internal/keys"
+	"github.com/Celaris-dev1/Ledger/internal/license"
 	"github.com/Celaris-dev1/Ledger/internal/retention"
 	"github.com/Celaris-dev1/Ledger/internal/store"
 )
@@ -70,6 +71,9 @@ func signer(ctx context.Context) (keys.Signer, *anchor.Keyring) {
 			die("signing key: %v", err)
 		}
 		return keys.Ed25519Signer{Key: k}, ring
+	}
+	if err := license.Require(license.FeatureKMSSigner); err != nil {
+		die("%v", err)
 	}
 	s, err := keys.SignerFromEnv(ctx, os.Getenv, nil)
 	if err != nil {
@@ -186,6 +190,9 @@ func runRegimeExport(ctx context.Context, args []string) {
 		}
 		fmt.Printf("OK  %s  template=%s document_hash=%s key=%s (%s)\n", *verify, r.Template, r.DocumentHash, r.Signature.KeyID, note)
 		return
+	}
+	if err := license.Require(license.FeatureComplianceExport); err != nil {
+		die("%v", err)
 	}
 	tp, err := compliance.Lookup(*regime, *version)
 	if err != nil {

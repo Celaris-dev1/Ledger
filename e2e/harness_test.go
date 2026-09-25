@@ -29,7 +29,25 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/Celaris-dev1/Ledger/internal/license"
 )
+
+// devLicenseToken is an Enterprise license signed with the repo's public dev key, used so
+// e2e can exercise Enterprise-gated features (compliance export, multi-tenancy, KMS/Vault
+// signers) against binaries built with -tags licensedev. It never verifies in a plain
+// `go build` release binary.
+func devLicenseToken(t *testing.T) string {
+	t.Helper()
+	tok, err := license.Sign(license.DevSigner(), &license.License{
+		LicenseID: "lic_e2e", Customer: "e2e", Product: "ledger", Edition: license.EditionEnterprise,
+		Seats: 100, IssuedAt: time.Now(), ExpiresAt: time.Now().Add(24 * time.Hour),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return tok
+}
 
 var (
 	binDir   string // ledgerd + ledger
@@ -50,7 +68,10 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 	for _, b := range []string{"ledgerd", "ledger"} {
-		cmd := exec.Command("go", "build", "-o", filepath.Join(binDir, b), "./cmd/"+b)
+		// -tags licensedev: e2e exercises Enterprise-gated features (compliance export,
+		// multi-tenancy) using a throwaway license signed with the repo's public dev key
+		// (see internal/license). A plain `go build` (no tags) never trusts that key.
+		cmd := exec.Command("go", "build", "-tags", "licensedev", "-o", filepath.Join(binDir, b), "./cmd/"+b)
 		cmd.Dir = repoRoot
 		cmd.Stdout, cmd.Stderr = os.Stderr, os.Stderr
 		if err := cmd.Run(); err != nil {
@@ -139,6 +160,7 @@ func newEnvAt(t *testing.T, dbURL, schema string) *Env {
 		"LEDGER_KEY_FILE":     filepath.Join(dir, "ledger_ed25519.key"),
 		"LEDGER_ANCHOR_DIR":   filepath.Join(dir, "anchors"),
 		"LEDGER_STREAM_POLL":  "500ms",
+		"LEDGER_LICENSE":      devLicenseToken(t),
 	}}
 	return e
 }

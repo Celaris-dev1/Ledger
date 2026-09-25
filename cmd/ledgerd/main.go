@@ -16,12 +16,28 @@ import (
 	"github.com/Celaris-dev1/Ledger/internal/api"
 	"github.com/Celaris-dev1/Ledger/internal/auth"
 	"github.com/Celaris-dev1/Ledger/internal/keys"
+	"github.com/Celaris-dev1/Ledger/internal/license"
 	"github.com/Celaris-dev1/Ledger/internal/projection"
 	"github.com/Celaris-dev1/Ledger/internal/receiptkeys"
 	"github.com/Celaris-dev1/Ledger/internal/store"
 	"github.com/Celaris-dev1/Ledger/internal/tenant"
 	"github.com/Celaris-dev1/Ledger/internal/web"
 )
+
+// distinctTenants counts the distinct real tenants (excluding the admin/wildcard
+// tenant.Admin, which spans every tenant rather than naming one) configured via
+// LEDGER_TOKENS. More than one is Enterprise multi-tenancy; a single tenant (with
+// or without an admin token alongside it) is free.
+func distinctTenants(toks map[string]string) int {
+	seen := map[string]bool{}
+	for _, t := range toks {
+		if t == tenant.Admin {
+			continue
+		}
+		seen[t] = true
+	}
+	return len(seen)
+}
 
 func env(k, d string) string {
 	if v := os.Getenv(k); v != "" {
@@ -71,6 +87,11 @@ func main() {
 		if err != nil {
 			log.Fatalf("ledgerd: %v", err)
 		}
+		if distinctTenants(toks) > 1 {
+			if err := license.Require(license.FeatureMultiTenancy); err != nil {
+				log.Fatalf("ledgerd: %v", err)
+			}
+		}
 		apiSrv.Tenants = toks
 		apiSrv.TenantStore = func(t string) (api.Backend, error) { return tenant.New(st, t) }
 		log.Printf("ledgerd: multi-tenancy on (%d tokens); LEDGER_TOKEN ignored", len(toks))
@@ -79,6 +100,9 @@ func main() {
 		apiSrv.DataKeys = &keys.FileDataKeyStore{Dir: d}
 	}
 	if s := os.Getenv("LEDGER_SIGNER"); s != "" && s != "file" {
+		if err := license.Require(license.FeatureKMSSigner); err != nil {
+			log.Fatalf("ledgerd: %v", err)
+		}
 		sg, err := keys.SignerFromEnv(ctx, os.Getenv, key)
 		if err != nil {
 			log.Fatalf("ledgerd: signer: %v", err)
