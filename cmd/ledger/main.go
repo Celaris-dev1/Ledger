@@ -48,6 +48,8 @@ usage:
                                          cross-product incident review for a goal (stdout by default)
   ledger token create --name NAME [--role writer|viewer|auditor|admin] | list | revoke ID
                                          manage API tokens (stored hashed; plaintext printed once)
+  ledger license show [--json] | verify <token|file>
+                                         current/verify an Enterprise license (see LICENSING in README)
 ` + verifyReceiptUsage + `
 
 env: LEDGER_DATABASE_URL, LEDGER_SIGNING_KEY (base64 seed) or LEDGER_KEY_FILE, LEDGER_KEYRING_DIR,
@@ -80,6 +82,12 @@ func main() {
 	cmd, args := os.Args[1], os.Args[2:]
 	if cmd == "verify-receipt" {
 		runVerifyReceipt(args)
+		return
+	}
+	if cmd == "license" {
+		if err := cmdLicense(args); err != nil {
+			die("%v", err)
+		}
 		return
 	}
 	if runOps(cmd, args) {
