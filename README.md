@@ -230,6 +230,87 @@ Tamper-matrix tests live in `internal/bundle/bundle_test.go` (modify payload, mo
 reorder, insert, swap the root signature, swap the trusted key, truncate the tail), plus
 `FuzzRead` for the bundle parser itself (`internal/bundle/fuzz_test.go`).
 
+## Customer-owned archive (EU AI Act Art. 19/26 "logs under the deployer's control") — Enterprise
+
+`ledger archive` writes sealed segments — the exact same offline-verifiable bundle format as
+`ledger bundle` (`internal/bundle`), one segment per chain per run — to a customer's own
+S3-compatible bucket, under S3 Object Lock, so the logs Art. 19(1)/26(6) requires stay under the
+deployer's control even from Ledger's own operator: neither this binary nor whoever runs it can
+edit or delete a segment before its retention date, and with Object Lock in `COMPLIANCE` mode
+(the default), *nobody* can, not even the bucket's AWS root account.
+
+```sh
+export LEDGER_ARCHIVE_S3_ENDPOINT=https://s3.eu-central-1.amazonaws.com   # or http://minio:9000
+export LEDGER_ARCHIVE_S3_BUCKET=acme-ledger-archive
+export LEDGER_ARCHIVE_S3_REGION=eu-central-1
+export LEDGER_ARCHIVE_S3_ACCESS_KEY_ID=...       # secrets from the environment only, never a flag
+export LEDGER_ARCHIVE_S3_SECRET_ACCESS_KEY=...
+# export LEDGER_ARCHIVE_S3_PATH_STYLE=1          # MinIO / most non-AWS S3-compatible services
+# export LEDGER_ARCHIVE_KEY_FILE=/secure/archive.key   # optional: envelope-encrypt every segment
+# export LEDGER_ARCHIVE_LOCK_MODE=COMPLIANCE     # or GOVERNANCE; COMPLIANCE is the default
+
+ledger archive                       # one segment per chain, retain-until from retention policy
+ledger archive --chain gate --chain proof
+ledger archive verify                # fetch every segment back, verify it, check DB coverage
+ledger archive verify --json
+```
+
+**How it's implemented.** `internal/archive/s3.go` is a from-scratch, dependency-free SigV4
+client (no AWS SDK): `PUT` (with `Content-MD5` plus, when Object Lock is requested,
+`x-amz-object-lock-mode` / `x-amz-object-lock-retain-until-date`), `HEAD`, `GET` and a paginated
+`ListObjectsV2`. The retain-until date comes from the chain's configured retention policy
+(`ledger retention set`, `internal/retention`; the EU AI Act floor, six months, is the default for
+a chain with no policy at all) applied from the oldest record in the segment, so a segment is
+never locked for less than the law requires. Segment keys are content-addressed by sequence range
+(`<chain>/seq-<from>-<to>.seg`), so re-running `ledger archive` after new records only adds a new,
+larger segment — it never touches an already-written one, which is also all Object Lock would
+allow.
+
+**Customer KMS for the archive.** Every segment can be envelope-encrypted (AES-256-GCM, a fresh
+random data key per segment) before upload. The data key itself is wrapped so the object store —
+and an attacker who only compromises the bucket — never sees it in the clear. Today exactly one
+wrapping key source is implemented: **`LEDGER_ARCHIVE_KEY_FILE`**, a 32-byte AES-256 key the
+customer generates and holds themselves (`openssl rand 32 -out archive.key`; hex, base64 or raw
+bytes are all accepted). This is deliberately *not* wired through `internal/keys`' existing
+`Signer`/`LEDGER_SIGNER=vault|awskms` abstraction: that interface signs (Ed25519/ECDSA), it has no
+encrypt/decrypt (wrap/unwrap) operation, and Vault Transit's `encrypt` endpoint and AWS KMS's
+`GenerateDataKey`/`Decrypt` are different APIs than the ones `keys.Signer` wraps. Wiring an actual
+Vault Transit or AWS KMS *encryption* backend in as a second `archive.KeySource` is future work —
+today, "customer KMS" for the archive means the customer's own key file. Root/document signing
+(`LEDGER_SIGNER=vault|awskms`, see "External anchoring" below) is unaffected and still available:
+a segment's chain root is signed with whatever signer `ledger` is configured with, exactly as
+`ledger bundle` does. Omit `LEDGER_ARCHIVE_KEY_FILE` and segments upload as plain (still signed,
+still Object-Locked) bundles.
+
+**`ledger archive verify`** fetches every segment for the given chains (default: all) back from
+the bucket, decrypts them if `LEDGER_ARCHIVE_KEY_FILE` is set (and fails closed — not silently
+skips — on an encrypted segment it can't decrypt), and re-checks each with
+`internal/bundle.Verify`, the identical offline verifier `ledger-verify` uses. It then
+cross-references the sequence ranges the good segments cover against what's actually in the
+database right now, and reports any gap as `missing_ranges`: records that were appended after the
+last archive run, or a segment that failed its own bundle check (parse/decrypt/signature failure)
+and so doesn't count as archived either. **What this proves, and what it doesn't:** a passing
+`archive verify` proves every currently-archived record's hash chain and root signature are
+intact and that the archive is not behind the live database. It does *not* by itself prove an
+object was never silently swapped for another *valid-looking* segment sharing the same key and
+bucket-visible metadata — that guarantee comes from Object Lock itself (retention makes an
+in-place overwrite or delete impossible while the lock holds) plus the fact that a forged segment
+would need a valid signature from the deployer's own signing key to pass `bundle.Verify`, not from
+anything `archive verify` computes locally.
+
+Tests: `internal/archive/s3_test.go` runs a small `httptest` fake S3 that recomputes and rejects
+bad SigV4 signatures the same way a real endpoint would, and enforces Object Lock (refuses an
+overwrite or delete before `retain-until`, allows it after). `internal/archive/archive_test.go`
+runs the full seal → upload → verify → tamper-detect flow against that fake S3 and a real
+Postgres-backed store (`internal/storetest`, skipped cleanly without `LEDGER_TEST_DATABASE_URL`),
+including a corrupted-segment case and an unarchived-tail case. There is no MinIO/Docker
+integration test today (none was available in this environment); the SigV4 implementation is
+validated against the fake's independent re-derivation of the signature rather than against a
+real S3-compatible server, which is the honest limit of what's actually been verified here.
+
+`FeatureArchive` ("customer-archive") gates both commands behind an Enterprise license, the same
+way `compliance-export` and `kms-signer` do (`internal/license`, `license.Require`).
+
 ## SDKs
 
 - Python (`sdk/python`, stdlib only): `Ledger(chain).record(type, payload, actor_chain, goal_id=, policy_version=)`
@@ -683,9 +764,13 @@ Not yet built (the "fully built version"):
   without `goal_id` project goal-less approvals (linked to the goal only via token budgets and the
   incident review).
 - Incident review scans every chain in memory to resolve cross-references (no ref index yet).
-- Retention: "expiry" only reports records as eligible. There is no automatic tiering or
-  archival to cold storage. Erasure works only on payloads written with `data_subject`, because
-  plaintext records cannot be shredded without breaking the append-only rule.
+- Retention: "expiry" only reports records as eligible; nothing is ever deleted from Postgres.
+  `ledger archive` (Enterprise) writes sealed, Object-Locked copies to customer-owned S3 storage,
+  but there is no automatic tiering, no scheduling built in (run it from cron/systemd-timer/etc.),
+  and no cold-storage read path back into Ledger itself — `archive verify` reads segments back
+  only to check them, not to restore or query them. Erasure works only on payloads written with
+  `data_subject`, because plaintext records cannot be shredded without breaking the append-only
+  rule.
 - Tenancy: projections, incident review, retention/holds and the `ledger` system chain are not
   tenant-scoped (operator-only). Regime packs and backups cover all tenants. The CLI has no
   `--tenant` flag; use the physical `t/<tenant>/<chain>` names.
@@ -709,6 +794,9 @@ Gated features:
   Ed25519 signer stays free.
 - **Multi-tenancy beyond one tenant** — `LEDGER_TOKENS` configuring more than one distinct
   tenant. A single-tenant deployment (with or without an admin token) stays free.
+- **Customer-owned S3 archive** — `ledger archive` / `ledger archive verify` (see "Customer-owned
+  archive" above). `ledger bundle` / `ledger-verify` (the underlying offline bundle format) stay
+  free.
 
 States: **none** (no license — core works fully, gated features are off), **valid**,
 **grace** (up to 14 days past expiry — gated features keep working with a loud warning),

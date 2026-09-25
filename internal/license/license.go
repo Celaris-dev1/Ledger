@@ -37,6 +37,10 @@ const (
 	FeatureKMSSigner = "kms-signer"
 	// FeatureMultiTenancy gates running more than one tenant via LEDGER_TOKENS. Enterprise.
 	FeatureMultiTenancy = "multi-tenancy"
+	// FeatureArchive gates the customer-owned S3 archive sink (`ledger archive`, `ledger
+	// archive verify`): sealed segments written to the customer's own Object Lock bucket.
+	// Enterprise.
+	FeatureArchive = "customer-archive"
 )
 
 // License is the signed payload. Field order is fixed and part of the signed encoding
@@ -65,7 +69,7 @@ func (l *License) HasFeature(feature string) bool {
 	}
 	switch l.Edition {
 	case EditionEnterprise:
-		return feature == FeatureComplianceExport || feature == FeatureKMSSigner || feature == FeatureMultiTenancy
+		return feature == FeatureComplianceExport || feature == FeatureKMSSigner || feature == FeatureMultiTenancy || feature == FeatureArchive
 	}
 	return false
 }
